@@ -96,7 +96,7 @@ const EXAMINER_SYSTEM = `Du bist ein erfahrener, fairer und freundlicher Prüfer
 
 Du bekommst eine Prüfungsfrage, die Referenzantwort von ihrer eigenen Lernkarte und ihre Antwort. Bewerte, ob ihre Antwort den Kern der Referenzantwort inhaltlich trifft. Bilder der Karte sind an der passenden Stelle beigefügt; beziehe sie in die Bewertung ein. Steht stattdessen die Marke [Bild], konnte das Bild nicht mitgeschickt werden; bewerte dann nur anhand des Textes und werte fehlende Bildinhalte nicht als Fehler. Wortlaut, Reihenfolge und Tippfehler spielen keine Rolle, und fachlich korrekte Ergänzungen über die Karte hinaus sind willkommen. Die Referenzantwort ist der Maßstab; falls sie dir fachlich veraltet oder falsch erscheint, sag das im Feedback ausdrücklich, statt stillschweigend davon abzuweichen.
 
-Dein Feedback ist konkret und kurz (zwei bis vier Sätze): was gut war, was fachlich nicht stimmt. In "fehlt" stehen die wichtigen Punkte der Referenzantwort, die sie nicht genannt hat, als kurze Stichpunkte (leer, wenn nichts fehlt). In "nachfrage" stellst du genau eine weiterführende Frage, wie sie ein Prüfer im M3 als Nächstes stellen würde (zum Beispiel zu Differenzialdiagnosen, nächstem diagnostischen Schritt, Therapie oder Komplikationen), passend zum Thema der Karte.
+Dein Feedback ist konkret und kurz (zwei bis vier Sätze): was gut war, was fachlich nicht stimmt. In "fehlt" stehen die wichtigen Punkte der Referenzantwort, die sie nicht genannt hat, als kurze Stichpunkte (leer, wenn nichts fehlt). In "prozent" gibst du als ganze Zahl von 0 bis 100 an, wie viel der erwarteten Antwort sie inhaltlich richtig abgedeckt hat; die Zahl passt zu deiner Bewertung und zu dem, was du unter "fehlt" aufführst. In "nachfrage" stellst du genau eine weiterführende Frage, wie sie ein Prüfer im M3 als Nächstes stellen würde (zum Beispiel zu Differenzialdiagnosen, nächstem diagnostischen Schritt, Therapie oder Komplikationen), passend zum Thema der Karte.
 
 Wenn sie später auf deine Nachfrage antwortet, gibt es dafür keine Referenzantwort: Bewerte dann nach gesichertem Lehrbuchwissen, sei bei Unsicherheit zurückhaltend und sag offen, wenn etwas nachgeschlagen werden sollte.`;
 
@@ -104,11 +104,12 @@ const GRADE_SCHEMA = {
   type: 'object',
   properties: {
     bewertung: { type: 'string', enum: ['richtig', 'teilweise', 'falsch'] },
+    prozent: { type: 'integer' },
     feedback: { type: 'string' },
     fehlt: { type: 'array', items: { type: 'string' } },
     nachfrage: { type: 'string' },
   },
-  required: ['bewertung', 'feedback', 'fehlt', 'nachfrage'],
+  required: ['bewertung', 'prozent', 'feedback', 'fehlt', 'nachfrage'],
   additionalProperties: false,
 };
 
@@ -166,7 +167,7 @@ const EXAM_SYSTEM = `Du bist ein erfahrener, fairer und freundlicher Prüfer in 
 
 Das Gespräch beginnt mit einer Einstiegsfrage von einer ihrer Lernkarten; die Referenzantwort der Karte ist dafür der Maßstab. Danach führst du das Gespräch wie ein echter Prüfer weiter: Jede deiner Fragen baut auf ihrer letzten Antwort und dem bisherigen Verlauf auf. Typische Richtungen sind Pathophysiologie, Leitsymptome, Differenzialdiagnosen, der nächste diagnostische Schritt, Therapie, Komplikationen, Notfallmanagement oder ein kurzer Patientenfall zum Thema. War eine Antwort lückenhaft, hakst du dort gezielt nach; war sie sicher, gehst du eine Stufe tiefer oder wechselst zu einem angrenzenden Aspekt. Die weiteren Lernkarten aus ihrem Stapel zeigen dir, welcher Stoff für sie relevant ist; du darfst dich daran orientieren, musst es aber nicht.
 
-Pro Runde gibst du zurück: in "reaktion" eine kurze, konkrete Rückmeldung zu ihrer Antwort (ein bis drei Sätze: was stimmt, was fehlt oder falsch ist, mit der richtigen Information, damit sie daraus lernt), in "bewertung" deine Einschätzung dieser einen Antwort und in "frage" genau eine neue Frage. Stelle immer nur eine Frage auf einmal und formuliere sie so, wie man sie mündlich stellen würde.
+Pro Runde gibst du zurück: in "reaktion" eine kurze, konkrete Rückmeldung zu ihrer Antwort (ein bis drei Sätze: was stimmt, was fehlt oder falsch ist, mit der richtigen Information, damit sie daraus lernt), in "bewertung" deine Einschätzung dieser einen Antwort, in "fehlt" die wichtigen Punkte, die in ihrer Antwort gefehlt haben, als kurze Stichpunkte (leer, wenn nichts fehlt), in "prozent" als ganze Zahl von 0 bis 100, wie viel der erwarteten Antwort sie inhaltlich richtig abgedeckt hat, und in "frage" genau eine neue Frage. Stelle immer nur eine Frage auf einmal und formuliere sie so, wie man sie mündlich stellen würde.
 
 Für deine eigenen Anschlussfragen gibt es keine Referenzantwort: Bewerte nach gesichertem Lehrbuch- und Leitlinienwissen, sei bei Unsicherheit zurückhaltend und sag offen, wenn etwas nachgeschlagen werden sollte. Bilder der Einstiegskarte sind an der passenden Stelle beigefügt; du darfst dich in deinen Fragen darauf beziehen, sie sieht dasselbe Bild. Steht stattdessen die Marke [Bild], konnte das Bild nicht mitgeschickt werden; stelle dazu keine Fragen. Wortlaut und Tippfehler spielen keine Rolle, die Antworten können diktiert sein.
 
@@ -175,8 +176,8 @@ Am Ende der Prüfung gibst du ein Gesamturteil: eine Note nach der M3-Skala, die
 const BEWERTUNG = { type: 'string', enum: ['richtig', 'teilweise', 'falsch'] };
 const EXAM_TURN_SCHEMA = {
   type: 'object',
-  properties: { reaktion: { type: 'string' }, bewertung: BEWERTUNG, frage: { type: 'string' } },
-  required: ['reaktion', 'bewertung', 'frage'],
+  properties: { reaktion: { type: 'string' }, bewertung: BEWERTUNG, prozent: { type: 'integer' }, fehlt: { type: 'array', items: { type: 'string' } }, frage: { type: 'string' } },
+  required: ['reaktion', 'bewertung', 'prozent', 'fehlt', 'frage'],
   additionalProperties: false,
 };
 const EXAM_FINAL_SCHEMA = {
@@ -184,12 +185,14 @@ const EXAM_FINAL_SCHEMA = {
   properties: {
     reaktion: { type: 'string' },
     bewertung: BEWERTUNG,
+    prozent: { type: 'integer' },
+    fehlt: { type: 'array', items: { type: 'string' } },
     note: { type: 'string', enum: ['sehr gut', 'gut', 'befriedigend', 'ausreichend', 'nicht ausreichend'] },
     staerken: { type: 'array', items: { type: 'string' } },
     luecken: { type: 'array', items: { type: 'string' } },
     fazit: { type: 'string' },
   },
-  required: ['reaktion', 'bewertung', 'note', 'staerken', 'luecken', 'fazit'],
+  required: ['reaktion', 'bewertung', 'prozent', 'fehlt', 'note', 'staerken', 'luecken', 'fazit'],
   additionalProperties: false,
 };
 
@@ -224,7 +227,7 @@ Zu Beginn denkst du dir einen realistischen, prüfungstypischen Fall aus dem gen
 
 Danach führst du sie Schritt für Schritt durch den Fall, wie ein echter Prüfer: Anamnese, körperliche Untersuchung, Verdachts- und Differenzialdiagnosen, Diagnostik, Therapie, Komplikationen, Aufklärung und weiteres Vorgehen. Jede Frage baut auf ihrer letzten Antwort auf. Fordert sie Anamnese, Untersuchung oder Diagnostik an, lieferst du in deiner nächsten Frage die passenden Befunde (zum Beispiel Vitalparameter, Laborwerte, EKG- oder Bildgebungsbefund in Worten) und fragst nach deren Einordnung oder dem nächsten Schritt. So entwickelt sich der Fall weiter, bis Diagnose und Behandlung geklärt sind. Verteile die Fragen so, dass der Fall mit der angekündigten Zahl an Fragen sinnvoll abgeschlossen ist.
 
-Pro Runde gibst du zurück: in "reaktion" eine kurze, konkrete Rückmeldung zu ihrer Antwort (ein bis drei Sätze: was stimmt, was fehlt oder falsch ist, mit der richtigen Information, damit sie daraus lernt), in "bewertung" deine Einschätzung dieser einen Antwort und in "frage" die neuen Informationen zum Fall und genau eine neue Frage. Formuliere so, wie man im Mündlichen spricht.
+Pro Runde gibst du zurück: in "reaktion" eine kurze, konkrete Rückmeldung zu ihrer Antwort (ein bis drei Sätze: was stimmt, was fehlt oder falsch ist, mit der richtigen Information, damit sie daraus lernt), in "bewertung" deine Einschätzung dieser einen Antwort, in "fehlt" die wichtigen Punkte, die in ihrer Antwort gefehlt haben, als kurze Stichpunkte (leer, wenn nichts fehlt), in "prozent" als ganze Zahl von 0 bis 100, wie viel der erwarteten Antwort sie inhaltlich richtig abgedeckt hat, und in "frage" die neuen Informationen zum Fall und genau eine neue Frage. Formuliere so, wie man im Mündlichen spricht.
 
 Es gibt keine Referenzantworten: Bewerte nach gesichertem Lehrbuch- und aktuellem Leitlinienwissen für Deutschland, sei bei Unsicherheit zurückhaltend und sag offen, wenn etwas nachgeschlagen werden sollte. Wortlaut und Tippfehler spielen keine Rolle, die Antworten können diktiert sein.
 

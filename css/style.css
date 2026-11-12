@@ -227,3 +227,12 @@ input[type="date"] { -webkit-appearance: none; appearance: none; min-width: 0; m
 @keyframes pulse { 50% { opacity: .7; } }
 input[type="range"] { padding: 0; border: 0; background: none; accent-color: var(--accent); height: 32px; }
 .scale { display: flex; justify-content: space-between; font-size: .8rem; }
+
+.micbig { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 4px auto; border: 0; background: none; font: inherit; color: var(--muted); cursor: pointer; }
+.micbig span { width: 84px; height: 84px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; font-size: 2.2rem; box-shadow: var(--shadow); }
+.micbig b { font-size: .92rem; }
+.micbig.rec span { background: var(--bad); animation: pulse 1.2s ease-in-out infinite; }
+.micbig.rec b { color: var(--bad); }
+.feedback.good .score i { background: var(--good); } .feedback.mid .score i { background: var(--mid); } .feedback.bad .score i { background: var(--bad); }
+.bubble ul { margin: 0; padding-left: 18px; font-size: .92rem; }
+.progress.score { flex: none; }

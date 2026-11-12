@@ -6,7 +6,7 @@ import { NACHRICHTEN } from '../nachrichten.js';
 // ---------- Zustand ----------
 
 const INTERVALS = [0, 1, 3, 7, 14, 30]; // Tage bis zur nächsten Wiederholung je Stufe
-const VERSION = 13; // bei jeder Änderung hochzählen, wird unter „Mehr“ angezeigt
+const VERSION = 14; // bei jeder Änderung hochzählen, wird unter „Mehr“ angezeigt
 const EXAM_QUESTIONS = 5; // Fragen pro Prüfungsgespräch (Einstieg + Anschlussfragen)
 const CASE_QUESTIONS = 7; // Fragen pro Fallbeispiel
 const CASE_SUBJECTS = [
@@ -155,12 +155,19 @@ function setHtml(html) {
 
 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null;
-const micButton = (sendAct) => (SpeechRec ? `<button class="btn mic" data-act="mic" data-send="${sendAct}">🎤 Antwort einsprechen</button>` : '');
+const MIC_IDLE = 'Tippen und sprechen';
+const micButton = (sendAct) => `<button class="micbig" data-act="mic" data-send="${sendAct}"><span>🎤</span><b>${MIC_IDLE}</b></button>`;
+const percent = (p) => (Number.isFinite(p) ? Math.max(0, Math.min(100, Math.round(p))) : null);
 
 function stopMic() { if (rec) { rec.onend = null; rec.abort(); rec = null; } }
 
 function toggleMic(btn) {
   if (rec) { rec.stop(); return; } // zweiter Tipp: fertig, Antwort wird geprüft
+  if (!SpeechRec) {
+    toast('Dieses Gerät stellt der App keine Spracherkennung bereit. Tippe ins Textfeld und nutze das Mikrofon auf der Tastatur.', 7000);
+    document.getElementById('answer')?.focus();
+    return;
+  }
   const box = document.getElementById('answer');
   const base = box.value.trim() ? box.value.trim() + ' ' : '';
   let heard = false;
@@ -185,12 +192,12 @@ function toggleMic(btn) {
     if (rec === r) rec = null;
     if (!document.contains(btn)) return;
     btn.classList.remove('rec');
-    btn.textContent = '🎤 Antwort einsprechen';
+    btn.lastElementChild.textContent = MIC_IDLE;
     if (heard && !failed && box.value.trim()) actions[btn.dataset.send]();
   };
   try { r.start(); } catch { rec = null; toast('Die Spracherkennung ließ sich nicht starten.'); return; }
   btn.classList.add('rec');
-  btn.textContent = '⏹ Fertig, jetzt prüfen';
+  btn.lastElementChild.textContent = 'Fertig? Tippen zum Prüfen';
 }
 
 // Bereitet die Bilder einer Karte für die KI auf: verkleinert und als JPEG (Base64).
@@ -431,7 +438,7 @@ async function examSend(mode) {
     const res = await (ex.card ? ai.examTurn : ai.caseTurn)(S.settings, ex, text, mode);
     if (session !== current) return;
     if (mode !== 'abbruch') {
-      ex.turns.push({ q: ex.question, a: text, reaktion: res.reaktion, bewertung: res.bewertung });
+      ex.turns.push({ q: ex.question, a: text, reaktion: res.reaktion, bewertung: res.bewertung, prozent: percent(res.prozent), fehlt: res.fehlt || [] });
       ex.draft = '';
       if (res.bewertung === 'richtig') S.stats.aiRight++;
       // Die Einstiegsfrage stammt von der Karte und zählt für deren Lernstand
@@ -470,7 +477,8 @@ function viewExam() {
   const turns = ex.turns.map((t, i) => `
     <div class="bubble examiner"><small>Prüfer</small><p class="pre">${i === 0 ? rich(t.q) : esc(t.q)}</p></div>
     <div class="bubble me"><p class="pre">${esc(t.a)}</p></div>
-    <div class="bubble examiner verdict ${label[t.bewertung][0]}"><small>${label[t.bewertung][1]}</small><p class="pre">${esc(t.reaktion)}</p></div>`).join('');
+    <div class="bubble examiner verdict ${label[t.bewertung][0]}"><small>${label[t.bewertung][1]}${t.prozent != null ? ` · ${t.prozent} % richtig` : ''}</small><p class="pre">${esc(t.reaktion)}</p>
+      ${t.fehlt && t.fehlt.length ? `<p class="muted small">Das hat gefehlt:</p><ul>${t.fehlt.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}</div>`).join('');
 
   if (ex.final) {
     const f = ex.final;
@@ -490,8 +498,8 @@ function viewExam() {
   const input = ex.loading
     ? `${ex.draft ? `<div class="bubble me"><p class="pre">${esc(ex.draft)}</p></div>` : ''}<section class="card center"><div class="spinner"></div><p class="muted">Der Prüfer überlegt …</p></section>`
     : `${ex.error ? `<p class="error">${esc(ex.error)}</p>` : ''}
-       <textarea id="answer" rows="4" placeholder="Deine Antwort … (Tipp: Diktierfunktion der Tastatur nutzen)"></textarea>
        ${micButton('examsend')}
+       <textarea id="answer" rows="3" placeholder="… oder hier tippen"></textarea>
        <button class="btn primary" data-act="examsend">Antworten</button>
        ${ex.turns.length ? `<button class="btn ghost" data-act="examstop">Prüfung jetzt beenden und bewerten</button>` : ''}`;
   return head + `<div class="chat">${turns}${current}</div>` + input;
@@ -677,7 +685,8 @@ function viewSession() {
   const results = ki.results.map((r, i) => `
     <section class="card feedback ${label[r.bewertung][0]}">
       <small>${i ? 'Nachfrage' : 'Bewertung'}</small>
-      <h3>${label[r.bewertung][1]}</h3>
+      <h3>${label[r.bewertung][1]}${percent(r.prozent) != null ? ` · ${percent(r.prozent)} % richtig` : ''}</h3>
+      ${percent(r.prozent) != null ? `<div class="progress slim score"><i style="width:${percent(r.prozent)}%"></i></div>` : ''}
       <p class="pre">${esc(r.feedback)}</p>
       ${r.fehlt.length ? `<p class="muted small">Das hat gefehlt:</p><ul>${r.fehlt.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
     </section>`).join('');
@@ -686,8 +695,8 @@ function viewSession() {
     ? `<section class="card center"><div class="spinner"></div><p class="muted">Der Prüfer überlegt …</p></section>`
     : `${last ? `<section class="card question follow"><small>Nachfrage des Prüfers</small><p class="pre">${esc(last.nachfrage)}</p></section>` : ''}
        ${ki.error ? `<p class="error">${esc(ki.error)}</p>` : ''}
-       <textarea id="answer" rows="5" placeholder="${last ? 'Deine Antwort auf die Nachfrage (optional)' : 'Deine Antwort … (Tipp: Diktierfunktion der Tastatur nutzen)'}"></textarea>
        ${micButton('send')}
+       <textarea id="answer" rows="3" placeholder="${last ? 'Antwort auf die Nachfrage (optional) … oder hier tippen' : '… oder hier tippen'}"></textarea>
        <button class="btn ${last ? '' : 'primary'}" data-act="send">${last ? 'Nachfrage beantworten' : 'Antwort abschicken'}</button>
        ${last ? `<button class="btn primary" data-act="next">Nächste Karte</button>` : `<button class="btn ghost" data-act="giveup">Weiß ich nicht</button>`}`;
   return head + question + results + (ki.results.length ? `<details class="card"><summary>Musterantwort von deiner Karte</summary><p class="pre">${rich(card.back)}</p></details>` : '') + input
