@@ -7,7 +7,7 @@ import { NACHRICHTEN } from '../nachrichten.js';
 // ---------- Zustand ----------
 
 const INTERVALS = [0, 1, 3, 7, 14, 30]; // Tage bis zur nächsten Wiederholung je Stufe
-const VERSION = 16; // bei jeder Änderung hochzählen, wird unter „Mehr“ angezeigt
+const VERSION = 17; // bei jeder Änderung hochzählen, wird unter „Mehr“ angezeigt
 const EXAM_QUESTIONS = 5; // Fragen pro Prüfungsgespräch (Einstieg + Anschlussfragen)
 const CASE_QUESTIONS = 7; // Fragen pro Fallbeispiel
 const CASE_SUBJECTS = [
@@ -24,6 +24,8 @@ const fresh = () => ({
   achievements: {},
   stats: { total: 0, aiRight: 0, mcRight: 0 },
   cases: [],
+  exams: [],
+  feedback: [],
 });
 
 let S = fresh();
@@ -508,10 +510,14 @@ async function examSend(mode) {
     else {
       ex.final = res; ex.question = '';
       if (!ex.card) {
-        S.cases.unshift({ date: todayKey(), fach: ex.fach, titel: ex.title, note: res.note });
+        S.cases.unshift({ date: todayKey(), ts: Date.now(), fach: ex.fach, titel: ex.title, note: res.note });
         S.cases = S.cases.slice(0, 40);
-        checkAchievements(); persist();
+      } else {
+        const titel = ex.card.front.replace(IMG_RE, ' ').replace(/\s+/g, ' ').trim();
+        S.exams.unshift({ date: todayKey(), ts: Date.now(), fach: ex.card.deck, titel: titel.length > 70 ? titel.slice(0, 70) + ' …' : titel, note: res.note });
+        S.exams = S.exams.slice(0, 60);
       }
+      checkAchievements(); persist();
     }
   } catch (err) {
     if (session !== current) return;
@@ -620,7 +626,7 @@ function viewHeute() {
   const badges = ACHIEVEMENTS.map((a) => `<div class="badge ${S.achievements[a.id] ? 'on' : ''}" title="${esc(a.desc)}"><span>${a.icon}</span><small>${esc(a.name)}</small></div>`).join('');
 
   return `
-    <header class="hero"><h1>Hallo${S.settings.name ? ' ' + esc(S.settings.name) : ''}! 👋</h1>${countdown}</header>
+    <header class="hero"><h1>Hallo${S.settings.name ? ' ' + esc(S.settings.name) : ''}! 👋</h1>${countdown}<button class="chip" data-act="tab" data-tab="feedback">💬 Feedback an ${esc(sender())}</button></header>
 
     ${msg ? `<section class="card note"><p>${esc(msg)}</p><small>— ${esc(sender())}</small></section>` : ''}
 
@@ -648,10 +654,64 @@ function viewHeute() {
       ${deckRows}
     </section>
 
+    ${examProgress()}
+
     <section class="card">
       <h2>Erfolge</h2>
       <div class="badges">${badges}</div>
     </section>`;
+}
+
+const GRADE_VALUE = { 'sehr gut': 1, gut: 2, befriedigend: 3, ausreichend: 4, 'nicht ausreichend': 5 };
+
+// Fortschritt in Prüfungsgesprächen und Fällen für die Heute-Seite
+function examProgress() {
+  const all = [...S.exams.map((e) => ({ ...e, typ: 'Prüfungsgespräch' })), ...S.cases.map((c) => ({ ...c, typ: 'Fall' }))]
+    .sort((a, b) => (b.date + String(b.ts || 0).padStart(15, '0')).localeCompare(a.date + String(a.ts || 0).padStart(15, '0')));
+  if (!all.length) return '';
+  const graded = all.filter((e) => GRADE_VALUE[e.note]);
+  const avg = (list) => (list.length ? (list.reduce((sum, e) => sum + GRADE_VALUE[e.note], 0) / list.length).toFixed(1).replace('.', ',') : '–');
+  const today = all.filter((e) => e.date === todayKey()).length;
+  const rows = all.slice(0, 6).map((e) => `<div class="row deckline"><span>${esc(e.titel)}<br><small class="muted">${e.typ} · ${esc(e.fach)} · ${fromKey(e.date).toLocaleDateString('de-DE')}</small></span><b class="nowrap">${esc(e.note)}</b></div>`).join('');
+  return `
+    <section class="card">
+      <div class="row"><h2>Prüfungsgespräche und Fälle</h2><span class="muted">${today} heute</span></div>
+      <div class="stats inner">
+        <div class="stat"><b>${S.exams.length}</b><span>Gespräche</span></div>
+        <div class="stat"><b>${S.cases.length}</b><span>Fälle</span></div>
+        <div class="stat"><b>${avg(graded)}</b><span>Ø Note</span></div>
+      </div>
+      <p class="muted small">Ø Note der letzten fünf: ${avg(graded.slice(0, 5))}</p>
+      ${rows}
+    </section>`;
+}
+
+function viewFeedback() {
+  const list = S.feedback.map((f) => `
+    <div class="fb ${f.sent ? 'sent' : ''}">
+      <div class="row"><small class="muted">${new Date(f.ts).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · ${f.sent ? 'gesendet' : 'neu'}</small>
+        <button class="icon-btn" data-act="fbdel" data-id="${f.ts}" aria-label="Löschen">🗑️</button></div>
+      <p class="pre">${esc(f.text)}</p>
+    </div>`).join('');
+  const fresh = S.feedback.filter((f) => !f.sent).length;
+  return `
+    <header class="hero"><h1>Feedback</h1><span class="chip">${fresh} neu · ${S.feedback.length} gesamt</span></header>
+    <section class="card">
+      <p>Was nervt, was fehlt, was wäre schön? Einfach einsprechen oder tippen. ${esc(sender())} bekommt alles gesammelt.</p>
+      ${micButton('fbsave')}
+      <textarea id="answer" rows="3" placeholder="… oder hier tippen"></textarea>
+      <button class="btn primary" data-act="fbsave">Speichern</button>
+    </section>
+    ${S.feedback.length ? `<section class="card">
+      <h2>Gesammeltes Feedback</h2>
+      <button class="btn primary" data-act="fbsend">${fresh ? `${fresh} neue an ${esc(sender())} senden` : `Alles nochmal an ${esc(sender())} senden`}</button>
+      ${list}
+    </section>` : ''}`;
+}
+
+function feedbackText(items) {
+  const lines = items.slice().reverse().map((f, i) => `${i + 1}. [${new Date(f.ts).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}] ${f.text}`);
+  return `Feedback zu M3 Coach (Version ${VERSION})${S.settings.name ? ' von ' + S.settings.name : ''}\n\n${lines.join('\n\n')}`;
 }
 
 function viewLernen() {
@@ -847,6 +907,11 @@ function viewMehr() {
       <button class="btn ghost danger" data-act="reset">Lernstand zurücksetzen</button>
     </section>
     <section class="card">
+      <h2>Feedback 💬</h2>
+      <p class="muted small">Wünsche und Probleme sammeln und an ${esc(sender())} schicken.</p>
+      <button class="btn" data-act="tab" data-tab="feedback">Feedback geben${S.feedback.filter((f) => !f.sent).length ? ` (${S.feedback.filter((f) => !f.sent).length} neu)` : ''}</button>
+    </section>
+    <section class="card">
       <h2>App</h2>
       <p class="muted small">Version ${VERSION}. Fehlt eine neue Funktion, hier aktualisieren. Karten und Lernstand bleiben erhalten.</p>
       <button class="btn" data-act="update">App aktualisieren</button>
@@ -857,7 +922,7 @@ function render() {
   $tabs.hidden = !!session;
   document.body.classList.toggle('in-session', !!session);
   if (session) { setHtml(viewSession()); return; }
-  setHtml({ heute: viewHeute, lernen: viewLernen, faelle: viewFaelle, karten: viewKarten, mehr: viewMehr }[tab]());
+  setHtml({ heute: viewHeute, lernen: viewLernen, faelle: viewFaelle, karten: viewKarten, mehr: viewMehr, feedback: viewFeedback }[tab]());
   for (const b of $tabs.querySelectorAll('button')) b.classList.toggle('on', b.dataset.tab === tab);
 }
 
@@ -1042,6 +1107,29 @@ const actions = {
     const a = Object.assign(document.createElement('a'), { href: url, download: `m3-coach-backup-${todayKey()}.json` });
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+  fbsave: () => {
+    const text = (document.getElementById('answer')?.value || '').trim();
+    if (!text) { toast('Sag oder schreib erst etwas.'); return; }
+    S.feedback.unshift({ ts: Date.now(), text, sent: false });
+    persist(); render();
+    toast('Gespeichert. Danke! 💛');
+  },
+  fbdel: (el) => { S.feedback = S.feedback.filter((f) => String(f.ts) !== el.dataset.id); persist(); render(); },
+  fbsend: async () => {
+    const fresh = S.feedback.filter((f) => !f.sent);
+    const items = fresh.length ? fresh : S.feedback;
+    const text = feedbackText(items);
+    try {
+      if (navigator.share) await navigator.share({ text });
+      else { await navigator.clipboard.writeText(text); toast('In die Zwischenablage kopiert. Jetzt in eine Nachricht einfügen.', 5000); }
+    } catch (err) {
+      if (err && err.name === 'AbortError') return; // Teilen abgebrochen
+      toast('Teilen hat nicht geklappt.');
+      return;
+    }
+    for (const f of items) f.sent = true;
+    persist(); render();
   },
   update: async (el) => {
     el.disabled = true; el.textContent = 'Aktualisiere …';

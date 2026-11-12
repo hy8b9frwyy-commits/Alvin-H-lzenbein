@@ -236,3 +236,8 @@ input[type="range"] { padding: 0; border: 0; background: none; accent-color: var
 .feedback.good .score i { background: var(--good); } .feedback.mid .score i { background: var(--mid); } .feedback.bad .score i { background: var(--bad); }
 .bubble ul { margin: 0; padding-left: 18px; font-size: .92rem; }
 .progress.score { flex: none; }
+
+.stats.inner .stat { background: var(--bg); box-shadow: none; }
+.hero .chip { cursor: pointer; }
+.fb { border-top: 1px solid var(--line); padding-top: 8px; }
+.fb.sent { opacity: .6; }
