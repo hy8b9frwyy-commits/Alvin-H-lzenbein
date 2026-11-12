@@ -1,8 +1,31 @@
 // KI-Prüfer: ruft die Claude-API direkt aus dem Browser auf.
 // Der API-Schlüssel liegt nur lokal auf dem Gerät (App-Einstellungen).
 
-// Bilder werden nicht mitgeschickt; im Text steht an ihrer Stelle [Bild].
-const plain = (t) => t.replace(/⟦img:[^⟧]+⟧/g, '[Bild]');
+// Bildmarken im Kartentext: ohne mitgeschicktes Bild steht an ihrer Stelle [Bild].
+const IMG = /⟦img:([^⟧]+)⟧/g;
+const plain = (t) => t.replace(IMG, '[Bild]');
+
+// Zerlegt einen Text mit Bildmarken in Text- und Bildblöcke für die API.
+// `images`: Map von Dateiname auf { media_type, data (Base64) }.
+function withImages(text, images) {
+  if (!images || !images.size) return plain(text);
+  const blocks = [];
+  const addText = (t) => {
+    if (!t) return;
+    const last = blocks[blocks.length - 1];
+    if (last && last.type === 'text') last.text += t; else blocks.push({ type: 'text', text: t });
+  };
+  let pos = 0;
+  for (const m of text.matchAll(IMG)) {
+    addText(text.slice(pos, m.index));
+    const img = images.get(m[1]);
+    if (img) blocks.push({ type: 'image', source: { type: 'base64', media_type: img.media_type, data: img.data } });
+    else addText('[Bild]');
+    pos = m.index + m[0].length;
+  }
+  addText(text.slice(pos));
+  return blocks;
+}
 
 let sdkPromise;
 const loadSdk = () => (sdkPromise ||= import('../vendor/anthropic-sdk.js').then((m) => m.default));
@@ -62,7 +85,7 @@ async function request(settings, { system, messages, schema }) {
 
 const EXAMINER_SYSTEM = `Du bist ein erfahrener, fairer und freundlicher Prüfer in der mündlich-praktischen Prüfung des Dritten Abschnitts der Ärztlichen Prüfung (M3) in Deutschland. Du prüfst eine Medizinstudentin kurz vor dem Examen und sprichst sie mit "du" an.
 
-Du bekommst eine Prüfungsfrage, die Referenzantwort von ihrer eigenen Lernkarte und ihre Antwort. Bewerte, ob ihre Antwort den Kern der Referenzantwort inhaltlich trifft. Steht in Frage oder Referenzantwort die Marke [Bild], gehört dort ein Bild hin, das du nicht sehen kannst; bewerte dann nur anhand des Textes und werte fehlende Bildinhalte nicht als Fehler. Wortlaut, Reihenfolge und Tippfehler spielen keine Rolle, und fachlich korrekte Ergänzungen über die Karte hinaus sind willkommen. Die Referenzantwort ist der Maßstab; falls sie dir fachlich veraltet oder falsch erscheint, sag das im Feedback ausdrücklich, statt stillschweigend davon abzuweichen.
+Du bekommst eine Prüfungsfrage, die Referenzantwort von ihrer eigenen Lernkarte und ihre Antwort. Bewerte, ob ihre Antwort den Kern der Referenzantwort inhaltlich trifft. Bilder der Karte sind an der passenden Stelle beigefügt; beziehe sie in die Bewertung ein. Steht stattdessen die Marke [Bild], konnte das Bild nicht mitgeschickt werden; bewerte dann nur anhand des Textes und werte fehlende Bildinhalte nicht als Fehler. Wortlaut, Reihenfolge und Tippfehler spielen keine Rolle, und fachlich korrekte Ergänzungen über die Karte hinaus sind willkommen. Die Referenzantwort ist der Maßstab; falls sie dir fachlich veraltet oder falsch erscheint, sag das im Feedback ausdrücklich, statt stillschweigend davon abzuweichen.
 
 Dein Feedback ist konkret und kurz (zwei bis vier Sätze): was gut war, was fachlich nicht stimmt. In "fehlt" stehen die wichtigen Punkte der Referenzantwort, die sie nicht genannt hat, als kurze Stichpunkte (leer, wenn nichts fehlt). In "nachfrage" stellst du genau eine weiterführende Frage, wie sie ein Prüfer im M3 als Nächstes stellen würde (zum Beispiel zu Differenzialdiagnosen, nächstem diagnostischen Schritt, Therapie oder Komplikationen), passend zum Thema der Karte.
 
@@ -82,14 +105,15 @@ const GRADE_SCHEMA = {
 
 // Bewertet eine Antwort. `history` enthält den bisherigen Gesprächsverlauf zu dieser Karte
 // (leer bei der ersten Antwort) und wird um die neue Runde ergänzt.
-export async function grade(settings, card, answer, history) {
+export async function grade(settings, card, answer, history, images) {
   const userText = history.length
     ? `Meine Antwort auf deine Nachfrage:\n${answer}`
-    : `Fach/Stapel: ${card.deck}\n\nPrüfungsfrage:\n${plain(card.front)}\n\nReferenzantwort (Lernkarte):\n${plain(card.back)}\n\nMeine Antwort:\n${answer}`;
-  const messages = [...history, { role: 'user', content: userText }];
+    : `Fach/Stapel: ${card.deck}\n\nPrüfungsfrage:\n${card.front}\n\nReferenzantwort (Lernkarte):\n${card.back}\n\nMeine Antwort:\n${plain(answer)}`;
+  const userContent = history.length ? userText : withImages(userText, images);
+  const messages = [...history, { role: 'user', content: userContent }];
   const { data, content } = await request(settings, { system: EXAMINER_SYSTEM, messages, schema: GRADE_SCHEMA });
   // Antwortblöcke unverändert zurückgeben, damit der Verlauf fortgesetzt werden kann.
-  history.push({ role: 'user', content: userText }, { role: 'assistant', content });
+  history.push({ role: 'user', content: userContent }, { role: 'assistant', content });
   return data;
 }
 
@@ -135,7 +159,7 @@ Das Gespräch beginnt mit einer Einstiegsfrage von einer ihrer Lernkarten; die R
 
 Pro Runde gibst du zurück: in "reaktion" eine kurze, konkrete Rückmeldung zu ihrer Antwort (ein bis drei Sätze: was stimmt, was fehlt oder falsch ist, mit der richtigen Information, damit sie daraus lernt), in "bewertung" deine Einschätzung dieser einen Antwort und in "frage" genau eine neue Frage. Stelle immer nur eine Frage auf einmal und formuliere sie so, wie man sie mündlich stellen würde.
 
-Für deine eigenen Anschlussfragen gibt es keine Referenzantwort: Bewerte nach gesichertem Lehrbuch- und Leitlinienwissen, sei bei Unsicherheit zurückhaltend und sag offen, wenn etwas nachgeschlagen werden sollte. Steht in einer Karte die Marke [Bild], gehört dort ein Bild hin, das du nicht sehen kannst; stelle dazu keine Fragen. Wortlaut und Tippfehler spielen keine Rolle, die Antworten können diktiert sein.
+Für deine eigenen Anschlussfragen gibt es keine Referenzantwort: Bewerte nach gesichertem Lehrbuch- und Leitlinienwissen, sei bei Unsicherheit zurückhaltend und sag offen, wenn etwas nachgeschlagen werden sollte. Bilder der Einstiegskarte sind an der passenden Stelle beigefügt; du darfst dich in deinen Fragen darauf beziehen, sie sieht dasselbe Bild. Steht stattdessen die Marke [Bild], konnte das Bild nicht mitgeschickt werden; stelle dazu keine Fragen. Wortlaut und Tippfehler spielen keine Rolle, die Antworten können diktiert sein.
 
 Am Ende der Prüfung gibst du ein Gesamturteil: eine Note nach der M3-Skala, die Stärken, die wichtigsten Lücken zum Nacharbeiten und ein kurzes, ehrliches und ermutigendes Fazit.`;
 
@@ -168,17 +192,18 @@ export async function examTurn(settings, exam, answer, mode) {
     userText = 'Ich beende die Prüfung an dieser Stelle, ohne die letzte Frage zu beantworten. Gib dein Gesamturteil über das bisherige Gespräch. Lass "reaktion" leer und wiederhole in "bewertung" die Einschätzung meiner letzten Antwort.';
   } else if (!exam.history.length) {
     const others = exam.context.map((c) => `Frage: ${plain(c.front)}\nAntwort: ${plain(c.back)}`).join('\n\n');
-    userText = `Fach/Stapel: ${exam.card.deck}\n\nEinstiegsfrage (Lernkarte):\n${plain(exam.card.front)}\n\nReferenzantwort (Lernkarte):\n${plain(exam.card.back)}`
+    userText = `Fach/Stapel: ${exam.card.deck}\n\nEinstiegsfrage (Lernkarte):\n${exam.card.front}\n\nReferenzantwort (Lernkarte):\n${exam.card.back}`
       + (others ? `\n\nWeitere Lernkarten aus demselben Stapel zur Orientierung:\n\n${others}` : '')
-      + `\n\nMeine Antwort auf die Einstiegsfrage:\n${answer}`;
+      + `\n\nMeine Antwort auf die Einstiegsfrage:\n${plain(answer)}`;
   } else {
     userText = `Meine Antwort:\n${answer}`;
   }
   if (mode === 'letzte') userText += '\n\n(Das war die letzte Frage dieser Prüfung. Bewerte diese Antwort und gib dann dein Gesamturteil.)';
 
-  const messages = [...exam.history, { role: 'user', content: userText }];
+  const userContent = exam.history.length ? userText : withImages(userText, exam.images);
+  const messages = [...exam.history, { role: 'user', content: userContent }];
   const { data, content } = await request(settings, { system: EXAM_SYSTEM, messages, schema: mode === 'weiter' ? EXAM_TURN_SCHEMA : EXAM_FINAL_SCHEMA });
-  exam.history.push({ role: 'user', content: userText }, { role: 'assistant', content });
+  exam.history.push({ role: 'user', content: userContent }, { role: 'assistant', content });
   return data;
 }
 

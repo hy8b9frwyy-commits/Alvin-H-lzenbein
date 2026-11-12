@@ -141,6 +141,34 @@ function setHtml(html) {
   }
 }
 
+// Bereitet die Bilder einer Karte für die KI auf: verkleinert und als JPEG (Base64).
+async function aiImages(card) {
+  const names = [...new Set([...(card.front + card.back).matchAll(IMG_RE)].map((m) => m[1]))].slice(0, 6);
+  const out = new Map();
+  for (const name of names) {
+    try {
+      const m = await store.getMedia(name);
+      if (!m) continue;
+      const url = URL.createObjectURL(new Blob([m.data], { type: m.type }));
+      const img = new Image();
+      await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = url; });
+      URL.revokeObjectURL(url);
+      const w = img.naturalWidth || 800;
+      const h = img.naturalHeight || 600;
+      const scale = Math.min(1, 1568 / Math.max(w, h));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(w * scale));
+      canvas.height = Math.max(1, Math.round(h * scale));
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      out.set(name, { media_type: 'image/jpeg', data: canvas.toDataURL('image/jpeg', 0.85).split(',')[1] });
+    } catch { /* Bild nicht lesbar: die KI bekommt an der Stelle [Bild] */ }
+  }
+  return out;
+}
+
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -306,6 +334,7 @@ async function examSend(mode) {
   render();
   scrollTo(0, document.body.scrollHeight);
   try {
+    if (!ex.history.length) ex.images = await aiImages(ex.card);
     const res = await ai.examTurn(S.settings, ex, text, mode);
     if (session !== current) return;
     if (mode !== 'abbruch') {
@@ -631,7 +660,7 @@ function viewMehr() {
       <label class="field"><span>Anthropic-API-Schlüssel</span><input type="password" data-set="apiKey" value="${esc(s.apiKey)}" placeholder="sk-ant-…" autocomplete="off"></label>
       <label class="field"><span>Modell</span><select data-set="model">${ai.MODELS.map((m) => `<option value="${m.id}" ${m.id === s.model ? 'selected' : ''}>${m.label}</option>`).join('')}</select></label>
       <button class="btn" data-act="testkey">Schlüssel testen</button>
-      <p class="muted small">Der Schlüssel wird nur auf diesem Gerät gespeichert und ist nicht im Backup enthalten. Jede KI-Frage kostet einen kleinen Betrag. Die Texte deiner Karten werden dafür an Anthropic gesendet.</p>
+      <p class="muted small">Der Schlüssel wird nur auf diesem Gerät gespeichert und ist nicht im Backup enthalten. Jede KI-Frage kostet einen kleinen Betrag. Die Texte und Bilder deiner Karten werden dafür an Anthropic gesendet.</p>
     </section>
     <section class="card">
       <h2>Backup</h2>
@@ -778,7 +807,8 @@ const actions = {
     ki.loading = true; ki.error = '';
     render();
     try {
-      const result = await ai.grade(S.settings, cardById(item.id), text, ki.history);
+      const card = cardById(item.id);
+      const result = await ai.grade(S.settings, card, text, ki.history, ki.history.length ? null : await aiImages(card));
       if (session !== current || session.ki !== ki) return;
       ki.results.push(result);
       if (!ki.rated) {
