@@ -7,7 +7,7 @@ import { NACHRICHTEN } from '../nachrichten.js';
 // ---------- Zustand ----------
 
 const INTERVALS = [0, 1, 3, 7, 14, 30]; // Tage bis zur nächsten Wiederholung je Stufe
-const VERSION = 17; // bei jeder Änderung hochzählen, wird unter „Mehr“ angezeigt
+const VERSION = 18; // bei jeder Änderung hochzählen, wird unter „Mehr“ angezeigt
 const EXAM_QUESTIONS = 5; // Fragen pro Prüfungsgespräch (Einstieg + Anschlussfragen)
 const CASE_QUESTIONS = 7; // Fragen pro Fallbeispiel
 const CASE_SUBJECTS = [
@@ -130,6 +130,13 @@ function dailyMessage() {
   const n = Math.abs(daysBetween('2024-01-01', todayKey()));
   return pool[n % pool.length];
 }
+function greeting() {
+  const h = new Date().getHours();
+  const t = NACHRICHTEN.tageszeit[h >= 5 && h < 11 ? 'morgen' : h >= 11 && h < 17 ? 'mittag' : h >= 17 && h < 23 ? 'abend' : 'nacht'];
+  const n = Math.abs(daysBetween('2024-01-01', todayKey()));
+  return { gruss: t.gruss.replace('{name}', S.settings.name ? ' ' + S.settings.name : ''), satz: t.saetze[n % t.saetze.length] };
+}
+const praise = () => `<p class="praise">💛 ${esc(pick(NACHRICHTEN.lob))}</p>`;
 const sender = () => S.settings.sender || NACHRICHTEN.absender;
 
 // ---------- Hilfen ----------
@@ -549,7 +556,7 @@ function viewExam() {
     const f = ex.final;
     const list = (items) => (items.length ? `<ul>${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '<p class="muted">–</p>');
     return head + `
-      <section class="card center"><small class="muted">Gesamtnote</small><div class="grade">${esc(f.note)}</div><p class="pre">${esc(f.fazit)}</p></section>
+      <section class="card center"><small class="muted">Gesamtnote</small><div class="grade">${esc(f.note)}</div><p class="pre">${esc(f.fazit)}</p>${praise()}</section>
       <section class="card feedback good"><h3>Das lief gut</h3>${list(f.staerken)}</section>
       <section class="card feedback mid"><h3>Das solltest du nacharbeiten</h3>${list(f.luecken)}</section>
       <details class="card"><summary>Gesprächsverlauf</summary><div class="chat">${turns}</div></details>
@@ -583,7 +590,7 @@ function next() {
 function viewHeute() {
   if (!S.cards.length) {
     return `
-      <header class="hero"><h1>Hallo${S.settings.name ? ' ' + esc(S.settings.name) : ''}! 👋</h1>
+      <header class="hero"><h1>${esc(greeting().gruss)}</h1>
       <p>Dein Lernbegleiter fürs M3.</p></header>
       <section class="card center">
         <div class="big-emoji">🩺</div>
@@ -626,7 +633,7 @@ function viewHeute() {
   const badges = ACHIEVEMENTS.map((a) => `<div class="badge ${S.achievements[a.id] ? 'on' : ''}" title="${esc(a.desc)}"><span>${a.icon}</span><small>${esc(a.name)}</small></div>`).join('');
 
   return `
-    <header class="hero"><h1>Hallo${S.settings.name ? ' ' + esc(S.settings.name) : ''}! 👋</h1>${countdown}<button class="chip" data-act="tab" data-tab="feedback">💬 Feedback an ${esc(sender())}</button></header>
+    <header class="hero"><h1>${esc(greeting().gruss)}</h1><p class="muted">${esc(greeting().satz)}</p>${countdown}<button class="chip" data-act="tab" data-tab="feedback">💬 Feedback an ${esc(sender())}</button></header>
 
     ${msg ? `<section class="card note"><p>${esc(msg)}</p><small>— ${esc(sender())}</small></section>` : ''}
 
@@ -637,10 +644,17 @@ function viewHeute() {
       <button class="btn primary" data-act="tab" data-tab="lernen">${d.goalHit ? 'Weiterlernen' : d.done ? 'Weiter geht’s' : 'Jetzt lernen'}</button>
     </section>
 
+    <section class="card">
+      <div class="row"><h2>Gesamtfortschritt</h2><span class="muted">${seen} von ${total} Karten gelernt</span></div>
+      <div class="bigpct">${pct(seen, total)} %</div>
+      <div class="seg tall"><i class="ok" style="width:${(sicher / total) * 100}%"></i><i class="work" style="width:${((seen - sicher) / total) * 100}%"></i></div>
+      <div class="legend"><span><i class="dot ok"></i>${sicher} sitzen</span><span><i class="dot work"></i>${seen - sicher} in Arbeit</span><span><i class="dot"></i>${total - seen} neu</span></div>
+    </section>
+
     <section class="stats">
       <div class="stat"><b>🔥 ${streak()}</b><span>Tage Serie</span></div>
       <div class="stat"><b>${pct(sicher, total)} %</b><span>sitzt</span></div>
-      <div class="stat"><b>${total - seen}</b><span>noch neu</span></div>
+      <div class="stat"><b>${S.stats.total}</b><span>Antworten</span></div>
     </section>
 
     <section class="card">
@@ -649,7 +663,7 @@ function viewHeute() {
     </section>
 
     <section class="card">
-      <div class="row"><h2>Fortschritt</h2><span class="muted">${sicher} von ${total} sitzen</span></div>
+      <div class="row"><h2>Fortschritt pro Fach</h2><span class="muted">${sicher} von ${total} sitzen</span></div>
       <div class="legend"><span><i class="dot ok"></i>sitzt</span><span><i class="dot work"></i>in Arbeit</span><span><i class="dot"></i>neu</span></div>
       ${deckRows}
     </section>
@@ -704,7 +718,8 @@ function viewFeedback() {
     </section>
     ${S.feedback.length ? `<section class="card">
       <h2>Gesammeltes Feedback</h2>
-      <button class="btn primary" data-act="fbsend">${fresh ? `${fresh} neue an ${esc(sender())} senden` : `Alles nochmal an ${esc(sender())} senden`}</button>
+      <button class="btn primary" data-act="fbwhatsapp">${fresh ? `${fresh} neue per WhatsApp an ${esc(sender())}` : `Alles nochmal per WhatsApp an ${esc(sender())}`}</button>
+      <button class="btn" data-act="fbsend">Anders senden (Nachrichten, Mail …)</button>
       ${list}
     </section>` : ''}`;
 }
@@ -769,6 +784,7 @@ function viewSession() {
     return `<section class="card center tall">
       <div class="big-emoji">${d.goalHit ? '🏆' : '💪'}</div>
       <h2>Runde geschafft!</h2>
+      ${praise()}
       <p>${session.right} von ${session.answered} richtig.</p>
       <p class="muted">${d.goalHit ? 'Tagesziel erreicht.' : `Heute: ${d.done} / ${d.target} Karten.`}</p>
       <button class="btn primary" data-act="quit">Fertig</button>
@@ -1116,6 +1132,14 @@ const actions = {
     toast('Gespeichert. Danke! 💛');
   },
   fbdel: (el) => { S.feedback = S.feedback.filter((f) => String(f.ts) !== el.dataset.id); persist(); render(); },
+  fbwhatsapp: () => {
+    const fresh = S.feedback.filter((f) => !f.sent);
+    const items = fresh.length ? fresh : S.feedback;
+    // Öffnet WhatsApp mit fertigem Text; dort nur noch den Chat auswählen
+    location.href = `https://wa.me/?text=${encodeURIComponent(feedbackText(items))}`;
+    for (const f of items) f.sent = true;
+    persist(); render();
+  },
   fbsend: async () => {
     const fresh = S.feedback.filter((f) => !f.sent);
     const items = fresh.length ? fresh : S.feedback;

@@ -241,3 +241,7 @@ input[type="range"] { padding: 0; border: 0; background: none; accent-color: var
 .hero .chip { cursor: pointer; }
 .fb { border-top: 1px solid var(--line); padding-top: 8px; }
 .fb.sent { opacity: .6; }
+
+.bigpct { font-size: 2.6rem; font-weight: 800; line-height: 1; color: var(--accent); letter-spacing: -.02em; }
+.seg.tall { height: 14px; }
+.praise { font-weight: 700; color: var(--accent); font-size: 1.05rem; }
