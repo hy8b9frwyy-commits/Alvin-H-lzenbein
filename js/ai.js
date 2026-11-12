@@ -37,6 +37,15 @@ export const MODELS = [
 ];
 export const DEFAULT_MODEL = MODELS[0].id;
 
+// Wie streng bewertet wird (Einstellung unter „Mehr“): 1 gnädig, 2 ausgewogen, 3 streng.
+const DICTATED = 'Die Antworten sind oft per Spracherkennung diktiert: Falsch erkannte, verstümmelte oder klanglich ähnliche Fachbegriffe deutest du wohlwollend so, wie sie offensichtlich gemeint waren, und wertest sie nicht als Fehler.';
+const STRICTNESS = {
+  1: `Bewerte großzügig. Es zählt, ob sie den Kern verstanden hat: Sinngemäß richtige, knappe oder umgangssprachlich formulierte Antworten gelten als "richtig", auch wenn Details oder einzelne Punkte fehlen, solange nichts Wesentliches falsch ist. "teilweise" vergibst du erst, wenn ein zentraler Teil fehlt, und "falsch" nur, wenn der Kern verfehlt oder etwas klinisch Gefährliches gesagt wurde. Fehlende Details nennst du freundlich in der Rückmeldung, ohne die Bewertung abzustufen. ${DICTATED}`,
+  2: `Bewerte ausgewogen: "richtig", wenn die wesentlichen Punkte genannt sind; "teilweise", wenn wichtige Punkte fehlen oder etwas ungenau ist; "falsch", wenn der Kern verfehlt wurde. ${DICTATED}`,
+  3: `Bewerte streng wie ein anspruchsvoller Prüfer: "richtig" nur, wenn alle wesentlichen Punkte genannt und fachlich präzise sind; fehlen wichtige Punkte oder ist etwas ungenau, ist es "teilweise". ${DICTATED}`,
+};
+const withStrictness = (system, settings) => `${system}\n\n${STRICTNESS[settings.strict] || STRICTNESS[1]}`;
+
 async function request(settings, { system, messages, schema }) {
   const Anthropic = await loadSdk();
   const client = new Anthropic({
@@ -111,7 +120,7 @@ export async function grade(settings, card, answer, history, images) {
     : `Fach/Stapel: ${card.deck}\n\nPrüfungsfrage:\n${card.front}\n\nReferenzantwort (Lernkarte):\n${card.back}\n\nMeine Antwort:\n${plain(answer)}`;
   const userContent = history.length ? userText : withImages(userText, images);
   const messages = [...history, { role: 'user', content: userContent }];
-  const { data, content } = await request(settings, { system: EXAMINER_SYSTEM, messages, schema: GRADE_SCHEMA });
+  const { data, content } = await request(settings, { system: withStrictness(EXAMINER_SYSTEM, settings), messages, schema: GRADE_SCHEMA });
   // Antwortblöcke unverändert zurückgeben, damit der Verlauf fortgesetzt werden kann.
   history.push({ role: 'user', content: userContent }, { role: 'assistant', content });
   return data;
@@ -202,7 +211,7 @@ export async function examTurn(settings, exam, answer, mode) {
 
   const userContent = exam.history.length ? userText : withImages(userText, exam.images);
   const messages = [...exam.history, { role: 'user', content: userContent }];
-  const { data, content } = await request(settings, { system: EXAM_SYSTEM, messages, schema: mode === 'weiter' ? EXAM_TURN_SCHEMA : EXAM_FINAL_SCHEMA });
+  const { data, content } = await request(settings, { system: withStrictness(EXAM_SYSTEM, settings), messages, schema: mode === 'weiter' ? EXAM_TURN_SCHEMA : EXAM_FINAL_SCHEMA });
   exam.history.push({ role: 'user', content: userContent }, { role: 'assistant', content });
   return data;
 }
@@ -245,7 +254,7 @@ export async function caseTurn(settings, cs, answer, mode) {
   }
   const schema = mode === 'start' ? CASE_START_SCHEMA : mode === 'weiter' ? EXAM_TURN_SCHEMA : EXAM_FINAL_SCHEMA;
   const messages = [...cs.history, { role: 'user', content: userText }];
-  const { data, content } = await request(settings, { system: CASE_SYSTEM, messages, schema });
+  const { data, content } = await request(settings, { system: withStrictness(CASE_SYSTEM, settings), messages, schema });
   cs.history.push({ role: 'user', content: userText }, { role: 'assistant', content });
   return data;
 }

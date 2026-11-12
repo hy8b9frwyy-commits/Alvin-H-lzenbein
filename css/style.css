@@ -222,3 +222,8 @@ input[type="date"] { -webkit-appearance: none; appearance: none; min-width: 0; m
 .bubble.verdict.bad { border-color: var(--bad); } .bubble.verdict.bad small { color: var(--bad); }
 .grade { font-size: 2rem; font-weight: 700; color: var(--accent); text-transform: capitalize; }
 .nowrap { white-space: nowrap; text-transform: capitalize; }
+
+.btn.mic.rec { background: var(--bad); border-color: var(--bad); color: #fff; animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .7; } }
+input[type="range"] { padding: 0; border: 0; background: none; accent-color: var(--accent); height: 32px; }
+.scale { display: flex; justify-content: space-between; font-size: .8rem; }

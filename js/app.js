@@ -6,7 +6,7 @@ import { NACHRICHTEN } from '../nachrichten.js';
 // ---------- Zustand ----------
 
 const INTERVALS = [0, 1, 3, 7, 14, 30]; // Tage bis zur nächsten Wiederholung je Stufe
-const VERSION = 12; // bei jeder Änderung hochzählen, wird unter „Mehr“ angezeigt
+const VERSION = 13; // bei jeder Änderung hochzählen, wird unter „Mehr“ angezeigt
 const EXAM_QUESTIONS = 5; // Fragen pro Prüfungsgespräch (Einstieg + Anschlussfragen)
 const CASE_QUESTIONS = 7; // Fragen pro Fallbeispiel
 const CASE_SUBJECTS = [
@@ -17,7 +17,7 @@ const CASE_SUBJECTS = [
 const SICHER_AB = 3; // ab dieser Stufe gilt eine Karte als "sitzt"
 
 const fresh = () => ({
-  settings: { name: '', sender: '', examDate: '', newPerDay: 0, messages: '', apiKey: '', model: ai.DEFAULT_MODEL },
+  settings: { name: '', sender: '', examDate: '', newPerDay: 0, messages: '', apiKey: '', model: ai.DEFAULT_MODEL, strict: 1 },
   cards: [],
   days: {},
   achievements: {},
@@ -137,6 +137,7 @@ const hasImage = (s) => s.includes('⟦img:');
 const imageUrls = new Map();
 
 function setHtml(html) {
+  stopMic();
   $app.innerHTML = html;
   for (const img of $app.querySelectorAll('img[data-media]')) {
     const name = img.dataset.media;
@@ -148,6 +149,48 @@ function setHtml(html) {
       else img.replaceWith(Object.assign(document.createElement('span'), { className: 'noimg', textContent: '[Bild fehlt]' }));
     });
   }
+}
+
+// ---------- Einsprechen (Spracherkennung des Browsers) ----------
+
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+const micButton = (sendAct) => (SpeechRec ? `<button class="btn mic" data-act="mic" data-send="${sendAct}">🎤 Antwort einsprechen</button>` : '');
+
+function stopMic() { if (rec) { rec.onend = null; rec.abort(); rec = null; } }
+
+function toggleMic(btn) {
+  if (rec) { rec.stop(); return; } // zweiter Tipp: fertig, Antwort wird geprüft
+  const box = document.getElementById('answer');
+  const base = box.value.trim() ? box.value.trim() + ' ' : '';
+  let heard = false;
+  let failed = false;
+  const r = rec = new SpeechRec();
+  r.lang = 'de-DE';
+  r.continuous = true;
+  r.interimResults = true;
+  r.onresult = (e) => {
+    if (!document.contains(box)) { stopMic(); return; }
+    let text = '';
+    for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
+    heard = true;
+    box.value = base + text.trim();
+  };
+  r.onerror = (e) => {
+    failed = true;
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') toast('Mikrofon oder Spracherkennung ist nicht erlaubt. Nutze sonst das Mikrofon auf der Tastatur.', 6000);
+    else if (e.error !== 'aborted' && e.error !== 'no-speech') toast('Die Spracherkennung hat nicht funktioniert. Nutze das Mikrofon auf der Tastatur.', 6000);
+  };
+  r.onend = () => {
+    if (rec === r) rec = null;
+    if (!document.contains(btn)) return;
+    btn.classList.remove('rec');
+    btn.textContent = '🎤 Antwort einsprechen';
+    if (heard && !failed && box.value.trim()) actions[btn.dataset.send]();
+  };
+  try { r.start(); } catch { rec = null; toast('Die Spracherkennung ließ sich nicht starten.'); return; }
+  btn.classList.add('rec');
+  btn.textContent = '⏹ Fertig, jetzt prüfen';
 }
 
 // Bereitet die Bilder einer Karte für die KI auf: verkleinert und als JPEG (Base64).
@@ -448,6 +491,7 @@ function viewExam() {
     ? `${ex.draft ? `<div class="bubble me"><p class="pre">${esc(ex.draft)}</p></div>` : ''}<section class="card center"><div class="spinner"></div><p class="muted">Der Prüfer überlegt …</p></section>`
     : `${ex.error ? `<p class="error">${esc(ex.error)}</p>` : ''}
        <textarea id="answer" rows="4" placeholder="Deine Antwort … (Tipp: Diktierfunktion der Tastatur nutzen)"></textarea>
+       ${micButton('examsend')}
        <button class="btn primary" data-act="examsend">Antworten</button>
        ${ex.turns.length ? `<button class="btn ghost" data-act="examstop">Prüfung jetzt beenden und bewerten</button>` : ''}`;
   return head + `<div class="chat">${turns}${current}</div>` + input;
@@ -611,7 +655,8 @@ function viewSession() {
 
   if (session.mode === 'oral') {
     return head + question + (session.stage === 'q'
-      ? `<p class="hint">Antworte laut, so wie in der Prüfung.</p><button class="btn primary" data-act="reveal">Musterantwort zeigen</button>`
+      ? `<p class="hint">Antworte laut, so wie in der Prüfung.</p><button class="btn primary" data-act="reveal">Musterantwort zeigen</button>
+         ${S.settings.apiKey ? `<button class="btn" data-act="tocheck">🎤 Antwort einsprechen und prüfen lassen</button>` : ''}`
       : `${answer}<p class="hint">Wie lief es?</p><div class="rate">
           <button class="btn bad" data-act="rate" data-r="bad">Nicht gewusst</button>
           <button class="btn mid" data-act="rate" data-r="mid">Unsicher</button>
@@ -642,6 +687,7 @@ function viewSession() {
     : `${last ? `<section class="card question follow"><small>Nachfrage des Prüfers</small><p class="pre">${esc(last.nachfrage)}</p></section>` : ''}
        ${ki.error ? `<p class="error">${esc(ki.error)}</p>` : ''}
        <textarea id="answer" rows="5" placeholder="${last ? 'Deine Antwort auf die Nachfrage (optional)' : 'Deine Antwort … (Tipp: Diktierfunktion der Tastatur nutzen)'}"></textarea>
+       ${micButton('send')}
        <button class="btn ${last ? '' : 'primary'}" data-act="send">${last ? 'Nachfrage beantworten' : 'Antwort abschicken'}</button>
        ${last ? `<button class="btn primary" data-act="next">Nächste Karte</button>` : `<button class="btn ghost" data-act="giveup">Weiß ich nicht</button>`}`;
   return head + question + results + (ki.results.length ? `<details class="card"><summary>Musterantwort von deiner Karte</summary><p class="pre">${rich(card.back)}</p></details>` : '') + input
@@ -716,6 +762,9 @@ function viewMehr() {
       <h2>KI-Prüfer</h2>
       <label class="field"><span>Anthropic-API-Schlüssel</span><input type="password" data-set="apiKey" value="${esc(s.apiKey)}" placeholder="sk-ant-…" autocomplete="off"></label>
       <label class="field"><span>Modell</span><select data-set="model">${ai.MODELS.map((m) => `<option value="${m.id}" ${m.id === s.model ? 'selected' : ''}>${m.label}</option>`).join('')}</select></label>
+      <label class="field"><span>Strenge der Bewertung</span>
+        <input type="range" min="1" max="3" step="1" data-set="strict" value="${s.strict || 1}">
+        <span class="scale"><span>gnädig</span><span>ausgewogen</span><span>streng</span></span></label>
       <button class="btn" data-act="testkey">Schlüssel testen</button>
       <p class="muted small">Der Schlüssel wird nur auf diesem Gerät gespeichert und ist nicht im Backup enthalten. Jede KI-Frage kostet einen kleinen Betrag. Die Texte und Bilder deiner Karten werden dafür an Anthropic gesendet.</p>
     </section>
@@ -834,6 +883,14 @@ const actions = {
   bonus: () => { today().bonus += 10; persist(); render(); },
   quit: () => { tab = session.exam && !session.exam.card ? 'faelle' : 'heute'; session = null; render(); scrollTo(0, 0); },
   reveal: () => { session.stage = 'a'; render(); },
+  // Von der Selbstbewertung zur KI-Prüfung wechseln (gilt für den Rest der Runde)
+  tocheck: () => {
+    session.mode = 'ki';
+    render();
+    const btn = $app.querySelector('[data-act="mic"]');
+    if (btn) toggleMic(btn); else document.getElementById('answer')?.focus();
+  },
+  mic: (el) => toggleMic(el),
   rate: (el) => { applyRating(session.queue[session.idx], el.dataset.r); next(); },
   pick: (el) => {
     const i = Number(el.dataset.i);
@@ -943,7 +1000,7 @@ document.addEventListener('change', async (e) => {
   const el = e.target;
   if (el.dataset.set) {
     const key = el.dataset.set;
-    S.settings[key] = key === 'newPerDay' ? Math.max(0, parseInt(el.value, 10) || 0) : key === 'messages' ? el.value : el.value.trim();
+    S.settings[key] = key === 'strict' ? parseInt(el.value, 10) || 1 : key === 'newPerDay' ? Math.max(0, parseInt(el.value, 10) || 0) : key === 'messages' ? el.value : el.value.trim();
     persist();
     return;
   }
