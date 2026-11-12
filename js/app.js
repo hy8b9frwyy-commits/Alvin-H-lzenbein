@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { parseAnki } from './anki.js';
+import { parseAnki, parseApkg, isPackage } from './anki.js';
 import * as ai from './ai.js';
 import { NACHRICHTEN } from '../nachrichten.js';
 
@@ -476,13 +476,15 @@ function viewKarten() {
     ${preview}
     <section class="card">
       <h2>Aus Anki importieren</h2>
+      <p class="muted small"><b>Direkt am Handy</b> (AnkiMobile oder AnkiDroid):</p>
       <ol class="steps">
-        <li>In Anki (am Computer): <b>Datei → Exportieren</b></li>
-        <li>Format: <b>Notizen als Text (.txt)</b></li>
-        <li>Haken setzen bei <b>Stapelname</b> und <b>Eindeutige Kennung</b> (HTML darf an bleiben)</li>
-        <li>Datei aufs Handy schicken und hier auswählen</li>
+        <li>In der Anki-App den Stapel exportieren bzw. teilen, Format <b>Stapelpaket (.apkg)</b>. Medien und Lernstand werden nicht gebraucht.</li>
+        <li><b>„In Dateien sichern“</b> wählen</li>
+        <li>Hier auf „Datei auswählen“ tippen und die .apkg-Datei öffnen</li>
       </ol>
-      <label class="btn primary filebtn">Datei auswählen<input type="file" accept=".txt,.csv,.tsv,text/plain,text/csv" data-change="file" hidden></label>
+      <label class="btn primary filebtn">Datei auswählen<input type="file" data-change="file" hidden></label>
+      <details><summary class="muted small">Vom Computer aus</summary>
+        <p class="muted small">In Anki <b>Datei → Exportieren</b>, als <b>Stapelpaket (.apkg)</b> oder <b>Notizen als Text (.txt)</b> mit Stapelname und eindeutiger Kennung. Datei aufs Handy schicken und hier auswählen.</p></details>
       <p class="muted small">Ein erneuter Import aktualisiert die Karten, der Lernstand bleibt erhalten.</p>
     </section>
     <section class="card">
@@ -541,8 +543,20 @@ function render() {
 // ---------- Import ----------
 
 function stageImport(text, name) {
-  const result = parseAnki(text, name);
-  if (!result.cards.length) { toast('Keine Karten erkannt. Ist es der Text-Export aus Anki?', 5000); return; }
+  showImport(parseAnki(text, name));
+}
+
+async function stageFile(file) {
+  const name = file.name.replace(/\.[^.]+$/, '');
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (!isPackage(bytes)) { showImport(parseAnki(new TextDecoder().decode(bytes), name)); return; }
+  toast('Paket wird gelesen …');
+  try { showImport(await parseApkg(bytes, name)); }
+  catch (err) { toast(err.message || 'Das Paket konnte nicht gelesen werden.', 6000); }
+}
+
+function showImport(result) {
+  if (!result.cards.length) { toast('Keine Karten erkannt. Ist es ein Anki-Paket oder der Text-Export aus Anki?', 5000); return; }
   pendingImport = result;
   render();
   scrollTo(0, 0);
@@ -682,8 +696,8 @@ document.addEventListener('change', async (e) => {
   }
   if (el.dataset.change === 'deck') { viewLernen.deck = el.value; render(); }
   if (el.dataset.change === 'file' && el.files[0]) {
-    const file = el.files[0];
-    stageImport(await file.text(), file.name.replace(/\.[^.]+$/, ''));
+    await stageFile(el.files[0]);
+    el.value = '';
   }
   if (el.dataset.change === 'restore' && el.files[0]) {
     try {
