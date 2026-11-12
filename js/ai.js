@@ -127,6 +127,61 @@ export async function makeChoices(settings, cards) {
   return data.aufgaben.filter((a) => a.falsch.length >= 3);
 }
 
+// ---------- Prüfungsgespräch: mehrere aufeinander aufbauende Fragen ----------
+
+const EXAM_SYSTEM = `Du bist ein erfahrener, fairer und freundlicher Prüfer in der mündlich-praktischen Prüfung des Dritten Abschnitts der Ärztlichen Prüfung (M3) in Deutschland. Du führst mit einer Medizinstudentin kurz vor dem Examen ein zusammenhängendes Prüfungsgespräch und sprichst sie mit "du" an.
+
+Das Gespräch beginnt mit einer Einstiegsfrage von einer ihrer Lernkarten; die Referenzantwort der Karte ist dafür der Maßstab. Danach führst du das Gespräch wie ein echter Prüfer weiter: Jede deiner Fragen baut auf ihrer letzten Antwort und dem bisherigen Verlauf auf. Typische Richtungen sind Pathophysiologie, Leitsymptome, Differenzialdiagnosen, der nächste diagnostische Schritt, Therapie, Komplikationen, Notfallmanagement oder ein kurzer Patientenfall zum Thema. War eine Antwort lückenhaft, hakst du dort gezielt nach; war sie sicher, gehst du eine Stufe tiefer oder wechselst zu einem angrenzenden Aspekt. Die weiteren Lernkarten aus ihrem Stapel zeigen dir, welcher Stoff für sie relevant ist; du darfst dich daran orientieren, musst es aber nicht.
+
+Pro Runde gibst du zurück: in "reaktion" eine kurze, konkrete Rückmeldung zu ihrer Antwort (ein bis drei Sätze: was stimmt, was fehlt oder falsch ist, mit der richtigen Information, damit sie daraus lernt), in "bewertung" deine Einschätzung dieser einen Antwort und in "frage" genau eine neue Frage. Stelle immer nur eine Frage auf einmal und formuliere sie so, wie man sie mündlich stellen würde.
+
+Für deine eigenen Anschlussfragen gibt es keine Referenzantwort: Bewerte nach gesichertem Lehrbuch- und Leitlinienwissen, sei bei Unsicherheit zurückhaltend und sag offen, wenn etwas nachgeschlagen werden sollte. Steht in einer Karte die Marke [Bild], gehört dort ein Bild hin, das du nicht sehen kannst; stelle dazu keine Fragen. Wortlaut und Tippfehler spielen keine Rolle, die Antworten können diktiert sein.
+
+Am Ende der Prüfung gibst du ein Gesamturteil: eine Note nach der M3-Skala, die Stärken, die wichtigsten Lücken zum Nacharbeiten und ein kurzes, ehrliches und ermutigendes Fazit.`;
+
+const BEWERTUNG = { type: 'string', enum: ['richtig', 'teilweise', 'falsch'] };
+const EXAM_TURN_SCHEMA = {
+  type: 'object',
+  properties: { reaktion: { type: 'string' }, bewertung: BEWERTUNG, frage: { type: 'string' } },
+  required: ['reaktion', 'bewertung', 'frage'],
+  additionalProperties: false,
+};
+const EXAM_FINAL_SCHEMA = {
+  type: 'object',
+  properties: {
+    reaktion: { type: 'string' },
+    bewertung: BEWERTUNG,
+    note: { type: 'string', enum: ['sehr gut', 'gut', 'befriedigend', 'ausreichend', 'nicht ausreichend'] },
+    staerken: { type: 'array', items: { type: 'string' } },
+    luecken: { type: 'array', items: { type: 'string' } },
+    fazit: { type: 'string' },
+  },
+  required: ['reaktion', 'bewertung', 'note', 'staerken', 'luecken', 'fazit'],
+  additionalProperties: false,
+};
+
+// Eine Runde im Prüfungsgespräch. `mode`: 'weiter' (neue Frage), 'letzte' (Antwort bewerten
+// und Gesamturteil) oder 'abbruch' (Gesamturteil ohne neue Antwort).
+export async function examTurn(settings, exam, answer, mode) {
+  let userText;
+  if (mode === 'abbruch') {
+    userText = 'Ich beende die Prüfung an dieser Stelle, ohne die letzte Frage zu beantworten. Gib dein Gesamturteil über das bisherige Gespräch. Lass "reaktion" leer und wiederhole in "bewertung" die Einschätzung meiner letzten Antwort.';
+  } else if (!exam.history.length) {
+    const others = exam.context.map((c) => `Frage: ${plain(c.front)}\nAntwort: ${plain(c.back)}`).join('\n\n');
+    userText = `Fach/Stapel: ${exam.card.deck}\n\nEinstiegsfrage (Lernkarte):\n${plain(exam.card.front)}\n\nReferenzantwort (Lernkarte):\n${plain(exam.card.back)}`
+      + (others ? `\n\nWeitere Lernkarten aus demselben Stapel zur Orientierung:\n\n${others}` : '')
+      + `\n\nMeine Antwort auf die Einstiegsfrage:\n${answer}`;
+  } else {
+    userText = `Meine Antwort:\n${answer}`;
+  }
+  if (mode === 'letzte') userText += '\n\n(Das war die letzte Frage dieser Prüfung. Bewerte diese Antwort und gib dann dein Gesamturteil.)';
+
+  const messages = [...exam.history, { role: 'user', content: userText }];
+  const { data, content } = await request(settings, { system: EXAM_SYSTEM, messages, schema: mode === 'weiter' ? EXAM_TURN_SCHEMA : EXAM_FINAL_SCHEMA });
+  exam.history.push({ role: 'user', content: userText }, { role: 'assistant', content });
+  return data;
+}
+
 export async function testKey(settings) {
   const { data } = await request(settings, {
     system: 'Antworte knapp.',

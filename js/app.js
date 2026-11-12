@@ -6,6 +6,7 @@ import { NACHRICHTEN } from '../nachrichten.js';
 // ---------- Zustand ----------
 
 const INTERVALS = [0, 1, 3, 7, 14, 30]; // Tage bis zur nächsten Wiederholung je Stufe
+const EXAM_QUESTIONS = 5; // Fragen pro Prüfungsgespräch (Einstieg + Anschlussfragen)
 const SICHER_AB = 3; // ab dieser Stufe gilt eine Karte als "sitzt"
 
 const fresh = () => ({
@@ -280,6 +281,91 @@ async function startSession(mode, deck, kind) {
   render();
 }
 
+function startExam(deck) {
+  const pool = S.cards.filter((c) => !deck || c.deck === deck);
+  if (!pool.length) { toast('Dafür gibt es gerade keine Karten.'); return; }
+  const queue = buildQueue(deck, 'due');
+  const card = queue.length ? cardById(pick(queue.slice(0, 15)).id) : pick(pool);
+  const context = shuffle(S.cards.filter((c) => c.deck === card.deck && c.id !== card.id)).slice(0, 6);
+  session = {
+    mode: 'exam', queue: [{ id: card.id }], idx: 0, total: 1, right: 0, answered: 0, deck,
+    exam: { card, context, history: [], turns: [], question: card.front, loading: false, error: '', final: null },
+  };
+  render();
+  scrollTo(0, 0);
+}
+
+async function examSend(mode) {
+  const ex = session.exam;
+  const current = session;
+  const box = document.getElementById('answer');
+  const text = box ? box.value.trim() : '';
+  if (mode !== 'abbruch' && !text) { toast('Schreib erst deine Antwort.'); return; }
+  if (mode !== 'abbruch' && ex.turns.length + 1 >= EXAM_QUESTIONS) mode = 'letzte';
+  ex.loading = true; ex.error = ''; ex.draft = text;
+  render();
+  scrollTo(0, document.body.scrollHeight);
+  try {
+    const res = await ai.examTurn(S.settings, ex, text, mode);
+    if (session !== current) return;
+    if (mode !== 'abbruch') {
+      ex.turns.push({ q: ex.question, a: text, reaktion: res.reaktion, bewertung: res.bewertung });
+      ex.draft = '';
+      if (res.bewertung === 'richtig') S.stats.aiRight++;
+      // Die Einstiegsfrage stammt von der Karte und zählt für deren Lernstand
+      if (ex.turns.length === 1) applyRating(session.queue[0], { richtig: 'good', teilweise: 'mid', falsch: 'bad' }[res.bewertung]);
+      else { checkAchievements(); persist(); }
+    }
+    if (mode === 'weiter') ex.question = res.frage;
+    else { ex.final = res; ex.question = ''; }
+  } catch (err) {
+    if (session !== current) return;
+    ex.error = err.message;
+  }
+  ex.loading = false;
+  render();
+  if (ex.error && document.getElementById('answer')) document.getElementById('answer').value = ex.draft;
+  scrollTo(0, ex.final ? 0 : document.body.scrollHeight);
+}
+
+function viewExam() {
+  const ex = session.exam;
+  const label = { richtig: ['good', 'Richtig'], teilweise: ['mid', 'Teilweise'], falsch: ['bad', 'Nicht richtig'] };
+  const asked = ex.turns.length + (ex.final ? 0 : 1);
+  const head = `<div class="sess-head"><button class="icon-btn" data-act="quit" aria-label="Beenden">✕</button>
+    <div class="progress slim"><i style="width:${pct(ex.turns.length, EXAM_QUESTIONS)}%"></i></div>
+    <span class="muted">${ex.final ? 'fertig' : `Frage ${asked}/${EXAM_QUESTIONS}`}</span></div>
+    <div class="deck-label">Prüfungsgespräch · ${esc(ex.card.deck)}</div>`;
+
+  const turns = ex.turns.map((t, i) => `
+    <div class="bubble examiner"><small>Prüfer</small><p class="pre">${i === 0 ? rich(t.q) : esc(t.q)}</p></div>
+    <div class="bubble me"><p class="pre">${esc(t.a)}</p></div>
+    <div class="bubble examiner verdict ${label[t.bewertung][0]}"><small>${label[t.bewertung][1]}</small><p class="pre">${esc(t.reaktion)}</p></div>`).join('');
+
+  if (ex.final) {
+    const f = ex.final;
+    const list = (items) => (items.length ? `<ul>${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '<p class="muted">–</p>');
+    return head + `
+      <section class="card center"><small class="muted">Gesamtnote</small><div class="grade">${esc(f.note)}</div><p class="pre">${esc(f.fazit)}</p></section>
+      <section class="card feedback good"><h3>Das lief gut</h3>${list(f.staerken)}</section>
+      <section class="card feedback mid"><h3>Das solltest du nacharbeiten</h3>${list(f.luecken)}</section>
+      <details class="card"><summary>Gesprächsverlauf</summary><div class="chat">${turns}</div></details>
+      <details class="card"><summary>Musterantwort zur Einstiegsfrage</summary><p class="pre">${rich(ex.card.back)}</p></details>
+      <button class="btn primary" data-act="examagain">Neues Prüfungsgespräch</button>
+      <button class="btn" data-act="quit">Fertig</button>
+      <p class="muted small center">Die KI kann sich irren. Im Zweifel gilt deine Karte bzw. das Lehrbuch.</p>`;
+  }
+
+  const current = `<div class="bubble examiner"><small>Prüfer</small><p class="pre">${ex.turns.length ? esc(ex.question) : rich(ex.question)}</p></div>`;
+  const input = ex.loading
+    ? `${ex.draft ? `<div class="bubble me"><p class="pre">${esc(ex.draft)}</p></div>` : ''}<section class="card center"><div class="spinner"></div><p class="muted">Der Prüfer überlegt …</p></section>`
+    : `${ex.error ? `<p class="error">${esc(ex.error)}</p>` : ''}
+       <textarea id="answer" rows="4" placeholder="Deine Antwort … (Tipp: Diktierfunktion der Tastatur nutzen)"></textarea>
+       <button class="btn primary" data-act="examsend">Antworten</button>
+       ${ex.turns.length ? `<button class="btn ghost" data-act="examstop">Prüfung jetzt beenden und bewerten</button>` : ''}`;
+  return head + `<div class="chat">${turns}${current}</div>` + input;
+}
+
 function next() {
   session.idx++;
   if (session.idx >= session.queue.length) session.done = true;
@@ -385,7 +471,8 @@ function viewLernen() {
   const modes = [
     { id: 'oral', icon: '🗣️', name: 'Mündliche Prüfung', desc: 'Frage lesen, laut antworten, mit der Musterantwort vergleichen.' },
     { id: 'mc', icon: '✅', name: 'Multiple Choice', desc: hasKey ? 'Die KI baut passende Antwortoptionen zu deinen Karten.' : 'Vier Optionen aus deinen Karten. Mit KI-Schlüssel werden die Optionen besser.' },
-    { id: 'ki', icon: '🎓', name: 'KI-Prüfer', desc: hasKey ? 'Antwort tippen oder diktieren. Die KI bewertet und hakt nach.' : 'Braucht einen API-Schlüssel (unter „Mehr“).', off: !hasKey },
+    { id: 'ki', icon: '🎓', name: 'KI-Prüfer', desc: hasKey ? 'Karte für Karte: Antwort tippen oder diktieren, die KI bewertet.' : 'Braucht einen API-Schlüssel (unter „Mehr“).', off: !hasKey },
+    { id: 'exam', icon: '👩‍⚕️', name: 'Prüfungsgespräch', desc: hasKey ? `Wie im M3: eine Einstiegsfrage, dann ${EXAM_QUESTIONS - 1} Anschlussfragen, die auf deinen Antworten aufbauen. Am Ende gibt es eine Note.` : 'Braucht einen API-Schlüssel (unter „Mehr“).', off: !hasKey },
   ];
 
   return `
@@ -418,6 +505,7 @@ function sessionHeader() {
 }
 
 function viewSession() {
+  if (session.mode === 'exam') return viewExam();
   if (session.loading) return `<section class="card center tall"><div class="spinner"></div><h2>Die KI erstellt Antwortoptionen …</h2><p class="muted">Das dauert einen Moment.</p></section>`;
   if (session.done) {
     const d = today();
@@ -647,7 +735,10 @@ Wo liegt der McBurney-Punkt?;Zwischen äußerem und mittlerem Drittel der Linie 
 
 const actions = {
   tab: (el) => { tab = el.dataset.tab; render(); scrollTo(0, 0); },
-  start: (el) => startSession(el.dataset.mode, viewLernen.deck || '', el.dataset.kind),
+  start: (el) => (el.dataset.mode === 'exam' ? startExam(viewLernen.deck || '') : startSession(el.dataset.mode, viewLernen.deck || '', el.dataset.kind)),
+  examsend: () => examSend('weiter'),
+  examstop: () => examSend('abbruch'),
+  examagain: () => startExam(session.deck),
   bonus: () => { today().bonus += 10; persist(); render(); },
   quit: () => { session = null; tab = 'heute'; render(); scrollTo(0, 0); },
   reveal: () => { session.stage = 'a'; render(); },
