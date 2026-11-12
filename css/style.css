@@ -201,3 +201,6 @@ details summary { cursor: pointer; font-weight: 600; }
 .confetti { position: fixed; inset: 0; pointer-events: none; z-index: 30; }
 
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* iOS zeichnet Datumsfelder sonst breiter und flacher als die übrigen Felder */
+input[type="date"] { -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; min-height: 46px; display: block; }
