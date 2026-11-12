@@ -7,6 +7,12 @@ import { NACHRICHTEN } from '../nachrichten.js';
 
 const INTERVALS = [0, 1, 3, 7, 14, 30]; // Tage bis zur nächsten Wiederholung je Stufe
 const EXAM_QUESTIONS = 5; // Fragen pro Prüfungsgespräch (Einstieg + Anschlussfragen)
+const CASE_QUESTIONS = 7; // Fragen pro Fallbeispiel
+const CASE_SUBJECTS = [
+  { id: 'ains', icon: '💉', name: 'Anästhesie, Intensiv-, Notfall- und Schmerzmedizin' },
+  { id: 'innere', icon: '🫀', name: 'Innere Medizin' },
+  { id: 'chirurgie', icon: '🔪', name: 'Chirurgie' },
+];
 const SICHER_AB = 3; // ab dieser Stufe gilt eine Karte als "sitzt"
 
 const fresh = () => ({
@@ -15,6 +21,7 @@ const fresh = () => ({
   days: {},
   achievements: {},
   stats: { total: 0, aiRight: 0, mcRight: 0 },
+  cases: [],
 });
 
 let S = fresh();
@@ -88,6 +95,7 @@ const ACHIEVEMENTS = [
   { id: 'seen', icon: '👀', name: 'Alles gesehen', desc: 'Jede Karte mindestens einmal gelernt', ok: () => S.cards.length > 0 && S.cards.every((c) => c.seen) },
   { id: 'half', icon: '🌗', name: 'Halbzeit', desc: 'Die Hälfte der Karten sitzt', ok: () => S.cards.length > 0 && sicherCount() >= S.cards.length / 2 },
   { id: 'all', icon: '🩺', name: 'Examensreif', desc: 'Alle Karten sitzen', ok: () => S.cards.length > 0 && sicherCount() === S.cards.length },
+  { id: 'case5', icon: '🏥', name: 'Fallprofi', desc: '5 Fallbeispiele abgeschlossen', ok: () => S.cases.length >= 5 },
   { id: 'ai10', icon: '🎓', name: 'Prüfer überzeugt', desc: '10 KI-Prüfungsfragen richtig', ok: () => S.stats.aiRight >= 10 },
 ];
 
@@ -317,10 +325,51 @@ function startExam(deck) {
   const context = shuffle(S.cards.filter((c) => c.deck === card.deck && c.id !== card.id)).slice(0, 6);
   session = {
     mode: 'exam', queue: [{ id: card.id }], idx: 0, total: 1, right: 0, answered: 0, deck,
-    exam: { card, context, history: [], turns: [], question: card.front, loading: false, error: '', final: null },
+    exam: { card, context, total: EXAM_QUESTIONS, history: [], turns: [], question: card.front, loading: false, error: '', final: null },
   };
   render();
   scrollTo(0, 0);
+}
+
+async function startCase(fach, thema) {
+  const ex = {
+    card: null, fach, thema, total: CASE_QUESTIONS, avoid: S.cases.filter((c) => c.fach === fach).slice(0, 12).map((c) => c.titel),
+    history: [], turns: [], question: '', title: '', loading: true, error: '', final: null,
+  };
+  const current = session = { mode: 'exam', queue: [], idx: 0, total: 1, right: 0, answered: 0, exam: ex };
+  render();
+  scrollTo(0, 0);
+  try {
+    const res = await ai.caseTurn(S.settings, ex, '', 'start');
+    if (session !== current) return;
+    ex.title = res.titel;
+    ex.question = `${res.vorstellung}\n\n${res.frage}`;
+    ex.loading = false;
+    render();
+  } catch (err) {
+    if (session !== current) return;
+    session = null; tab = 'faelle';
+    render();
+    toast(err.message, 6000);
+  }
+}
+
+function viewFaelle() {
+  const hasKey = !!S.settings.apiKey;
+  const past = S.cases.slice(0, 15).map((c) => `<div class="row deckline"><span>${esc(c.titel)}<br><small class="muted">${esc(c.fach)} · ${fromKey(c.date).toLocaleDateString('de-DE')}</small></span><b class="nowrap">${esc(c.note)}</b></div>`).join('');
+  return `
+    <header class="hero"><h1>Fälle</h1><span class="chip">${S.cases.length} ${S.cases.length === 1 ? 'Fall' : 'Fälle'} gelöst</span></header>
+    <section class="card">
+      <p>Ein Patientenfall wie im M3: Der Prüfer stellt dir eine Situation vor und führt dich in ${CASE_QUESTIONS} Fragen durch Anamnese, Diagnostik und Therapie. Am Ende gibt es eine Note.</p>
+      ${hasKey ? `<label class="field"><span>Thema (optional)</span><input id="casetopic" placeholder="z. B. akutes Abdomen, Sepsis, Polytrauma"></label>`
+        : `<p class="error">Dafür braucht es einen API-Schlüssel.</p><button class="btn" data-act="tab" data-tab="mehr">Schlüssel eintragen</button>`}
+    </section>
+    ${CASE_SUBJECTS.map((f) => `
+      <button class="mode ${hasKey ? '' : 'off'}" data-act="startcase" data-fach="${esc(f.name)}" ${hasKey ? '' : 'disabled'}>
+        <span class="mode-icon">${f.icon}</span><span><b>${esc(f.name)}</b><small>Neuen Fall starten</small></span>
+      </button>`).join('')}
+    ${past ? `<section class="card"><h2>Bisherige Fälle</h2>${past}</section>` : ''}
+    <p class="muted small center">Die Fälle erfindet die KI. Sie kann sich irren; im Zweifel gilt das Lehrbuch.</p>`;
 }
 
 async function examSend(mode) {
@@ -329,24 +378,31 @@ async function examSend(mode) {
   const box = document.getElementById('answer');
   const text = box ? box.value.trim() : '';
   if (mode !== 'abbruch' && !text) { toast('Schreib erst deine Antwort.'); return; }
-  if (mode !== 'abbruch' && ex.turns.length + 1 >= EXAM_QUESTIONS) mode = 'letzte';
+  if (mode !== 'abbruch' && ex.turns.length + 1 >= ex.total) mode = 'letzte';
   ex.loading = true; ex.error = ''; ex.draft = text;
   render();
   scrollTo(0, document.body.scrollHeight);
   try {
-    if (!ex.history.length) ex.images = await aiImages(ex.card);
-    const res = await ai.examTurn(S.settings, ex, text, mode);
+    if (ex.card && !ex.history.length) ex.images = await aiImages(ex.card);
+    const res = await (ex.card ? ai.examTurn : ai.caseTurn)(S.settings, ex, text, mode);
     if (session !== current) return;
     if (mode !== 'abbruch') {
       ex.turns.push({ q: ex.question, a: text, reaktion: res.reaktion, bewertung: res.bewertung });
       ex.draft = '';
       if (res.bewertung === 'richtig') S.stats.aiRight++;
       // Die Einstiegsfrage stammt von der Karte und zählt für deren Lernstand
-      if (ex.turns.length === 1) applyRating(session.queue[0], { richtig: 'good', teilweise: 'mid', falsch: 'bad' }[res.bewertung]);
+      if (ex.card && ex.turns.length === 1) applyRating(session.queue[0], { richtig: 'good', teilweise: 'mid', falsch: 'bad' }[res.bewertung]);
       else { checkAchievements(); persist(); }
     }
     if (mode === 'weiter') ex.question = res.frage;
-    else { ex.final = res; ex.question = ''; }
+    else {
+      ex.final = res; ex.question = '';
+      if (!ex.card) {
+        S.cases.unshift({ date: todayKey(), fach: ex.fach, titel: ex.title, note: res.note });
+        S.cases = S.cases.slice(0, 40);
+        checkAchievements(); persist();
+      }
+    }
   } catch (err) {
     if (session !== current) return;
     ex.error = err.message;
@@ -362,9 +418,10 @@ function viewExam() {
   const label = { richtig: ['good', 'Richtig'], teilweise: ['mid', 'Teilweise'], falsch: ['bad', 'Nicht richtig'] };
   const asked = ex.turns.length + (ex.final ? 0 : 1);
   const head = `<div class="sess-head"><button class="icon-btn" data-act="quit" aria-label="Beenden">✕</button>
-    <div class="progress slim"><i style="width:${pct(ex.turns.length, EXAM_QUESTIONS)}%"></i></div>
-    <span class="muted">${ex.final ? 'fertig' : `Frage ${asked}/${EXAM_QUESTIONS}`}</span></div>
-    <div class="deck-label">Prüfungsgespräch · ${esc(ex.card.deck)}</div>`;
+    <div class="progress slim"><i style="width:${pct(ex.turns.length, ex.total)}%"></i></div>
+    <span class="muted">${ex.final ? 'fertig' : `Frage ${asked}/${ex.total}`}</span></div>
+    <div class="deck-label">${ex.card ? `Prüfungsgespräch · ${esc(ex.card.deck)}` : `Fall · ${esc(ex.title || ex.fach)}`}</div>`;
+  if (!ex.card && !ex.question && !ex.final) return head + '<section class="card center tall"><div class="spinner"></div><h2>Dein Fall wird vorbereitet …</h2><p class="muted">Das dauert einen Moment.</p></section>';
 
   const turns = ex.turns.map((t, i) => `
     <div class="bubble examiner"><small>Prüfer</small><p class="pre">${i === 0 ? rich(t.q) : esc(t.q)}</p></div>
@@ -379,8 +436,8 @@ function viewExam() {
       <section class="card feedback good"><h3>Das lief gut</h3>${list(f.staerken)}</section>
       <section class="card feedback mid"><h3>Das solltest du nacharbeiten</h3>${list(f.luecken)}</section>
       <details class="card"><summary>Gesprächsverlauf</summary><div class="chat">${turns}</div></details>
-      <details class="card"><summary>Musterantwort zur Einstiegsfrage</summary><p class="pre">${rich(ex.card.back)}</p></details>
-      <button class="btn primary" data-act="examagain">Neues Prüfungsgespräch</button>
+      ${ex.card ? `<details class="card"><summary>Musterantwort zur Einstiegsfrage</summary><p class="pre">${rich(ex.card.back)}</p></details>` : ''}
+      <button class="btn primary" data-act="examagain">${ex.card ? 'Neues Prüfungsgespräch' : 'Neuer Fall'}</button>
       <button class="btn" data-act="quit">Fertig</button>
       <p class="muted small center">Die KI kann sich irren. Im Zweifel gilt deine Karte bzw. das Lehrbuch.</p>`;
   }
@@ -674,7 +731,7 @@ function render() {
   $tabs.hidden = !!session;
   document.body.classList.toggle('in-session', !!session);
   if (session) { setHtml(viewSession()); return; }
-  setHtml({ heute: viewHeute, lernen: viewLernen, karten: viewKarten, mehr: viewMehr }[tab]());
+  setHtml({ heute: viewHeute, lernen: viewLernen, faelle: viewFaelle, karten: viewKarten, mehr: viewMehr }[tab]());
   for (const b of $tabs.querySelectorAll('button')) b.classList.toggle('on', b.dataset.tab === tab);
 }
 
@@ -766,9 +823,10 @@ const actions = {
   start: (el) => (el.dataset.mode === 'exam' ? startExam(viewLernen.deck || '') : startSession(el.dataset.mode, viewLernen.deck || '', el.dataset.kind)),
   examsend: () => examSend('weiter'),
   examstop: () => examSend('abbruch'),
-  examagain: () => startExam(session.deck),
+  examagain: () => (session.exam.card ? startExam(session.deck) : startCase(session.exam.fach, session.exam.thema)),
+  startcase: (el) => startCase(el.dataset.fach, (document.getElementById('casetopic')?.value || '').trim()),
   bonus: () => { today().bonus += 10; persist(); render(); },
-  quit: () => { session = null; tab = 'heute'; render(); scrollTo(0, 0); },
+  quit: () => { tab = session.exam && !session.exam.card ? 'faelle' : 'heute'; session = null; render(); scrollTo(0, 0); },
   reveal: () => { session.stage = 'a'; render(); },
   rate: (el) => { applyRating(session.queue[session.idx], el.dataset.r); next(); },
   pick: (el) => {

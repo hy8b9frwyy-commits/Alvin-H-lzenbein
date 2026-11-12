@@ -40,11 +40,11 @@ function mediaName(src) {
   return name.normalize('NFC').replace(/[⟦⟧]/g, '');
 }
 
-function toText(value, isHtml) {
+function toText(value, isHtml, dropLinks = false) {
   let out = value;
   if (isHtml) {
     const doc = new DOMParser().parseFromString(value, 'text/html');
-    doc.querySelectorAll('style,script').forEach((el) => el.remove());
+    doc.querySelectorAll(dropLinks ? 'style,script,a' : 'style,script').forEach((el) => el.remove());
     // Export "Karten als Text": Rückseite enthält Vorderseite + <hr id=answer>
     const hr = doc.querySelector('hr#answer');
     if (hr) { while (hr.previousSibling) hr.previousSibling.remove(); hr.remove(); }
@@ -75,6 +75,24 @@ function hash(str) {
 
 const CLOZE = /\{\{c\d+::([\s\S]*?)(?:::([\s\S]*?))?\}\}/g;
 
+// Zusatzfelder (ab dem dritten Feld): Verwaltungsfelder wie Links, Quellen, Datum und IDs
+// werden weggelassen, der Rest mit seinem Feldnamen an die Antwort gehängt.
+const META_FIELD = /(link|url|quelle|source|stand|datum|date|version|ankihub|hub_id|note.?id|(^|[\s_])id$|^tags?$|sort|index)/i;
+const META_LINE = /^(https?:\/\/\S+|www\.\S+|\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f-]{22,}|\d{1,2}\/\d{4}|\d{1,2}\.\d{1,2}\.\d{2,4})$/i;
+
+function extraFields(entry, isHtml) {
+  const out = [];
+  entry.fields.slice(2).forEach((raw, i) => {
+    const name = entry.names ? entry.names[i + 2] || '' : '';
+    if (name && META_FIELD.test(name)) return;
+    const text = toText(raw, isHtml, true);
+    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (!lines.length || lines.every((l) => META_LINE.test(l))) return;
+    out.push(name ? `${name}:\n${text}` : text);
+  });
+  return out;
+}
+
 // Baut aus rohen Notizen ({ fields, deck, guid, tags }) fertige Karten.
 function makeCards(entries, isHtml, fallbackDeck) {
   const cards = [];
@@ -82,10 +100,10 @@ function makeCards(entries, isHtml, fallbackDeck) {
   let skipped = 0;
 
   for (const entry of entries) {
-    const content = entry.fields.map((f) => toText(f, isHtml));
+    const content = entry.fields.slice(0, 2).map((f) => toText(f, isHtml));
     let front = content[0] || '';
     let back = content[1] || '';
-    const extras = content.slice(2).filter(Boolean);
+    const extras = extraFields(entry, isHtml);
 
     if (/\{\{c\d+::/.test(front)) {
       const full = front.replace(CLOZE, '$1');
@@ -286,11 +304,28 @@ export async function parseApkg(file, fallbackDeck = 'Importiert') {
       } catch { /* ohne Stapelnamen weiter */ }
     }
 
+    // Feldnamen der Notiztypen, um Verwaltungsfelder zu erkennen
+    const fieldNames = new Map();
+    try {
+      for (const [ntid, ord, name] of rows('SELECT ntid, ord, name FROM fields ORDER BY ntid, ord')) {
+        const key = String(ntid);
+        if (!fieldNames.has(key)) fieldNames.set(key, []);
+        fieldNames.get(key)[ord] = String(name);
+      }
+    } catch { /* älteres Format: Notiztypen stehen als JSON in der Tabelle col */ }
+    if (!fieldNames.size) {
+      try {
+        const json = JSON.parse(rows('SELECT models FROM col')[0][0]);
+        for (const m of Object.values(json)) fieldNames.set(String(m.id), m.flds.map((f) => f.name));
+      } catch { /* ohne Feldnamen weiter */ }
+    }
+
     const deckOfNote = new Map();
     for (const [nid, did] of rows('SELECT nid, did FROM cards ORDER BY ord DESC')) deckOfNote.set(String(nid), String(did));
 
-    const entries = rows('SELECT id, guid, flds, tags FROM notes').map(([id, guid, flds, tags]) => ({
+    const entries = rows('SELECT id, guid, flds, tags, mid FROM notes').map(([id, guid, flds, tags, mid]) => ({
       fields: String(flds).split('\x1f'),
+      names: fieldNames.get(String(mid)),
       deck: deckNames.get(deckOfNote.get(String(id))) || '',
       guid: String(guid),
       tags: String(tags || '').trim(),

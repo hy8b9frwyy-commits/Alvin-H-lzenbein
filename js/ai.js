@@ -207,6 +207,49 @@ export async function examTurn(settings, exam, answer, mode) {
   return data;
 }
 
+// ---------- Fallbeispiele: die KI erfindet einen Patientenfall und führt durch ihn ----------
+
+const CASE_SYSTEM = `Du bist ein erfahrener, fairer und freundlicher Prüfer in der mündlich-praktischen Prüfung des Dritten Abschnitts der Ärztlichen Prüfung (M3) in Deutschland. Du prüfst eine Medizinstudentin kurz vor dem Examen anhand eines Patientenfalls und sprichst sie mit "du" an.
+
+Zu Beginn denkst du dir einen realistischen, prüfungstypischen Fall aus dem genannten Fach aus: ein häufiges oder klinisch wichtiges Krankheitsbild, wie es im M3 in Deutschland gefragt wird, mit Name, Alter, Situation (zum Beispiel Hausarztpraxis, Notaufnahme, Station, OP, Intensivstation, Rettungsdienst) und Leitsymptom. In "vorstellung" beschreibst du die Ausgangssituation in zwei bis vier Sätzen, ohne die Diagnose zu verraten, und in "titel" gibst du dem Fall eine kurze Überschrift, die die Diagnose ebenfalls nicht verrät (zum Beispiel "Frau Müller, 54, Bauchschmerzen"). Die erste Frage ist offen, etwa nach dem ersten Schritt oder dem weiteren Vorgehen.
+
+Danach führst du sie Schritt für Schritt durch den Fall, wie ein echter Prüfer: Anamnese, körperliche Untersuchung, Verdachts- und Differenzialdiagnosen, Diagnostik, Therapie, Komplikationen, Aufklärung und weiteres Vorgehen. Jede Frage baut auf ihrer letzten Antwort auf. Fordert sie Anamnese, Untersuchung oder Diagnostik an, lieferst du in deiner nächsten Frage die passenden Befunde (zum Beispiel Vitalparameter, Laborwerte, EKG- oder Bildgebungsbefund in Worten) und fragst nach deren Einordnung oder dem nächsten Schritt. So entwickelt sich der Fall weiter, bis Diagnose und Behandlung geklärt sind. Verteile die Fragen so, dass der Fall mit der angekündigten Zahl an Fragen sinnvoll abgeschlossen ist.
+
+Pro Runde gibst du zurück: in "reaktion" eine kurze, konkrete Rückmeldung zu ihrer Antwort (ein bis drei Sätze: was stimmt, was fehlt oder falsch ist, mit der richtigen Information, damit sie daraus lernt), in "bewertung" deine Einschätzung dieser einen Antwort und in "frage" die neuen Informationen zum Fall und genau eine neue Frage. Formuliere so, wie man im Mündlichen spricht.
+
+Es gibt keine Referenzantworten: Bewerte nach gesichertem Lehrbuch- und aktuellem Leitlinienwissen für Deutschland, sei bei Unsicherheit zurückhaltend und sag offen, wenn etwas nachgeschlagen werden sollte. Wortlaut und Tippfehler spielen keine Rolle, die Antworten können diktiert sein.
+
+Am Ende gibst du ein Gesamturteil: eine Note nach der M3-Skala, die Stärken, die wichtigsten Lücken zum Nacharbeiten und ein kurzes, ehrliches und ermutigendes Fazit, in dem du auch die Diagnose und den roten Faden des Falls in ein, zwei Sätzen zusammenfasst.`;
+
+const CASE_START_SCHEMA = {
+  type: 'object',
+  properties: { titel: { type: 'string' }, vorstellung: { type: 'string' }, frage: { type: 'string' } },
+  required: ['titel', 'vorstellung', 'frage'],
+  additionalProperties: false,
+};
+
+// Eine Runde im Fallbeispiel. `mode`: 'start' (Fall erzeugen), 'weiter', 'letzte' oder 'abbruch'.
+export async function caseTurn(settings, cs, answer, mode) {
+  let userText;
+  if (mode === 'start') {
+    userText = `Fach: ${cs.fach}`
+      + (cs.thema ? `\nGewünschtes Thema: ${cs.thema}` : '')
+      + `\nAnzahl der Fragen in dieser Prüfung: ${cs.total}`
+      + (cs.avoid.length ? `\n\nDiese Fälle hatte ich zuletzt schon, bitte ein anderes Krankheitsbild wählen:\n${cs.avoid.map((t) => `- ${t}`).join('\n')}` : '')
+      + '\n\nStelle mir den Fall vor und stelle die erste Frage.';
+  } else if (mode === 'abbruch') {
+    userText = 'Ich beende die Prüfung an dieser Stelle, ohne die letzte Frage zu beantworten. Gib dein Gesamturteil über das bisherige Gespräch. Lass "reaktion" leer und wiederhole in "bewertung" die Einschätzung meiner letzten Antwort.';
+  } else {
+    userText = `Meine Antwort:\n${answer}`;
+    if (mode === 'letzte') userText += '\n\n(Das war die letzte Frage dieser Prüfung. Bewerte diese Antwort und gib dann dein Gesamturteil.)';
+  }
+  const schema = mode === 'start' ? CASE_START_SCHEMA : mode === 'weiter' ? EXAM_TURN_SCHEMA : EXAM_FINAL_SCHEMA;
+  const messages = [...cs.history, { role: 'user', content: userText }];
+  const { data, content } = await request(settings, { system: CASE_SYSTEM, messages, schema });
+  cs.history.push({ role: 'user', content: userText }, { role: 'assistant', content });
+  return data;
+}
+
 export async function testKey(settings) {
   const { data } = await request(settings, {
     system: 'Antworte knapp.',
