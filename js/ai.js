@@ -174,11 +174,14 @@ Für deine eigenen Anschlussfragen gibt es keine Referenzantwort: Bewerte nach g
 
 Am Ende der Prüfung gibst du ein Gesamturteil: eine Note nach der M3-Skala, die Stärken, die wichtigsten Lücken zum Nacharbeiten und ein kurzes, ehrliches und ermutigendes Fazit.`;
 
+// Gilt für Prüfungsgespräch und Fälle: bei unvollständigen Antworten erst nachhaken.
+const NACHHAKEN = `Nachhaken: Ist eine Antwort im Kern richtig, aber unvollständig, weil wichtige Punkte fehlen, gehst du noch nicht zur nächsten Frage weiter, und zwar unabhängig davon, wie großzügig du bewertest. Du setzt "nachhaken" auf true, bestätigst in "reaktion" nur kurz, was stimmt, verrätst die fehlenden Punkte noch nicht ("fehlt" bleibt leer) und fragst in "frage" offen nach, so wie ein Prüfer es tut: etwa "Da fehlt noch etwas Wichtiges, was noch?" oder mit einem kleinen Hinweis auf die Richtung, ohne die Lösung zu nennen. Auf dieselbe Frage hakst du höchstens einmal nach. Nach ihrer Ergänzung bewertest du Erstantwort und Ergänzung zusammen, nennst in "fehlt", was dann immer noch fehlt, erklärst es kurz in "reaktion", setzt "nachhaken" auf false und stellst die nächste Frage. War eine Antwort vollständig oder im Kern falsch, hakst du nicht nach, sondern korrigierst und gehst weiter. Runden, in denen du nur nachhakst, zählen nicht zur angekündigten Anzahl der Fragen.`;
+
 const BEWERTUNG = { type: 'string', enum: ['richtig', 'teilweise', 'falsch'] };
 const EXAM_TURN_SCHEMA = {
   type: 'object',
-  properties: { verstanden: { type: 'string' }, reaktion: { type: 'string' }, bewertung: BEWERTUNG, prozent: { type: 'integer' }, fehlt: { type: 'array', items: { type: 'string' } }, frage: { type: 'string' } },
-  required: ['verstanden', 'reaktion', 'bewertung', 'prozent', 'fehlt', 'frage'],
+  properties: { verstanden: { type: 'string' }, reaktion: { type: 'string' }, bewertung: BEWERTUNG, prozent: { type: 'integer' }, fehlt: { type: 'array', items: { type: 'string' } }, nachhaken: { type: 'boolean' }, frage: { type: 'string' } },
+  required: ['verstanden', 'reaktion', 'bewertung', 'prozent', 'fehlt', 'nachhaken', 'frage'],
   additionalProperties: false,
 };
 const EXAM_FINAL_SCHEMA = {
@@ -216,7 +219,7 @@ export async function examTurn(settings, exam, answer, mode) {
 
   const userContent = exam.history.length ? userText : withImages(userText, exam.images);
   const messages = [...exam.history, { role: 'user', content: userContent }];
-  const { data, content } = await request(settings, { system: withStrictness(EXAM_SYSTEM, settings), messages, schema: mode === 'weiter' ? EXAM_TURN_SCHEMA : EXAM_FINAL_SCHEMA });
+  const { data, content } = await request(settings, { system: withStrictness(`${EXAM_SYSTEM}\n\n${NACHHAKEN}`, settings), messages, schema: mode === 'weiter' ? EXAM_TURN_SCHEMA : EXAM_FINAL_SCHEMA });
   exam.history.push({ role: 'user', content: userContent }, { role: 'assistant', content });
   return data;
 }
@@ -259,7 +262,7 @@ export async function caseTurn(settings, cs, answer, mode) {
   }
   const schema = mode === 'start' ? CASE_START_SCHEMA : mode === 'weiter' ? EXAM_TURN_SCHEMA : EXAM_FINAL_SCHEMA;
   const messages = [...cs.history, { role: 'user', content: userText }];
-  const { data, content } = await request(settings, { system: withStrictness(CASE_SYSTEM, settings), messages, schema });
+  const { data, content } = await request(settings, { system: withStrictness(`${CASE_SYSTEM}\n\n${NACHHAKEN}`, settings), messages, schema });
   cs.history.push({ role: 'user', content: userText }, { role: 'assistant', content });
   return data;
 }

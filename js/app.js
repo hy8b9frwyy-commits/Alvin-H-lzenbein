@@ -1,12 +1,13 @@
 import * as store from './store.js';
 import { parseAnki, parseApkg, isPackage, IMG_RE } from './anki.js';
 import * as ai from './ai.js';
+import { transcribe } from './speech.js';
 import { NACHRICHTEN } from '../nachrichten.js';
 
 // ---------- Zustand ----------
 
 const INTERVALS = [0, 1, 3, 7, 14, 30]; // Tage bis zur nächsten Wiederholung je Stufe
-const VERSION = 15; // bei jeder Änderung hochzählen, wird unter „Mehr“ angezeigt
+const VERSION = 16; // bei jeder Änderung hochzählen, wird unter „Mehr“ angezeigt
 const EXAM_QUESTIONS = 5; // Fragen pro Prüfungsgespräch (Einstieg + Anschlussfragen)
 const CASE_QUESTIONS = 7; // Fragen pro Fallbeispiel
 const CASE_SUBJECTS = [
@@ -17,7 +18,7 @@ const CASE_SUBJECTS = [
 const SICHER_AB = 3; // ab dieser Stufe gilt eine Karte als "sitzt"
 
 const fresh = () => ({
-  settings: { name: '', sender: '', examDate: '', newPerDay: 0, messages: '', apiKey: '', model: ai.DEFAULT_MODEL, strict: 1 },
+  settings: { name: '', sender: '', examDate: '', newPerDay: 0, messages: '', apiKey: '', openaiKey: '', model: ai.DEFAULT_MODEL, strict: 1 },
   cards: [],
   days: {},
   achievements: {},
@@ -157,11 +158,69 @@ const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null;
 const MIC_IDLE = 'Tippen und sprechen';
 const micButton = (sendAct) => `<button class="micbig" data-act="mic" data-send="${sendAct}"><span>🎤</span><b>${MIC_IDLE}</b></button>`;
+// Gezählt werden nur eigentliche Fragen, nicht die Runden, in denen der Prüfer nachhakt
+const countedTurns = (ex) => ex.turns.filter((t) => !t.followup).length;
 const percent = (p) => (Number.isFinite(p) ? Math.max(0, Math.min(100, Math.round(p))) : null);
 
-function stopMic() { if (rec) { rec.onend = null; rec.abort(); rec = null; } }
+let recorder = null; // laufende Aufnahme für die bessere Spracherkennung
+
+function stopMic() {
+  if (rec) { rec.onend = null; rec.abort(); rec = null; }
+  if (recorder) { recorder.cancelled = true; recorder.stop(); }
+}
+
+// Stichworte zur aktuellen Frage, damit die Spracherkennung die Fachbegriffe richtig schreibt
+function speechHint() {
+  const ex = session && session.exam;
+  const card = ex ? ex.card : session && cardById(session.queue[session.idx]?.id);
+  const parts = ['Mündliche Medizinprüfung (M3) auf Deutsch, eine Studentin beantwortet eine Prüfungsfrage.'];
+  if (ex) parts.push(`Frage: ${ex.question}`);
+  if (card) parts.push(`Thema: ${card.deck}. ${card.front} ${card.back}`);
+  return parts.join(' ').replace(IMG_RE, ' ').replace(/\s+/g, ' ').slice(0, 900);
+}
+
+async function recordAndTranscribe(btn) {
+  if (recorder) { recorder.stop(); return; } // zweiter Tipp: fertig
+  const label = btn.lastElementChild;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    toast('Kein Zugriff auf das Mikrofon. Bitte in den iPhone-Einstellungen erlauben.', 6000);
+    return;
+  }
+  const chunks = [];
+  const r = recorder = new MediaRecorder(stream);
+  r.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+  r.onstop = async () => {
+    stream.getTracks().forEach((t) => t.stop());
+    recorder = null;
+    if (r.cancelled || !document.contains(btn)) return;
+    btn.classList.remove('rec');
+    btn.disabled = true;
+    label.textContent = 'Wird verstanden …';
+    try {
+      const text = await transcribe(S.settings.openaiKey, new Blob(chunks, { type: r.mimeType || 'audio/mp4' }), speechHint());
+      if (!document.contains(btn)) return;
+      const box = document.getElementById('answer');
+      if (text) {
+        box.value = (box.value.trim() ? box.value.trim() + ' ' : '') + text;
+        actions[btn.dataset.send]();
+        return;
+      }
+      toast('Es wurde nichts verstanden. Versuch es noch einmal.');
+    } catch (err) {
+      toast(err.message, 6000);
+    }
+    if (document.contains(btn)) { btn.disabled = false; label.textContent = MIC_IDLE; }
+  };
+  r.start();
+  btn.classList.add('rec');
+  label.textContent = 'Fertig? Tippen zum Prüfen';
+}
 
 function toggleMic(btn) {
+  if (S.settings.openaiKey && navigator.mediaDevices && window.MediaRecorder) { recordAndTranscribe(btn); return; }
   if (rec) { rec.stop(); return; } // zweiter Tipp: fertig, Antwort wird geprüft
   if (!SpeechRec) {
     toast('Dieses Gerät stellt der App keine Spracherkennung bereit. Tippe ins Textfeld und nutze das Mikrofon auf der Tastatur.', 7000);
@@ -429,7 +488,7 @@ async function examSend(mode) {
   const box = document.getElementById('answer');
   const text = box ? box.value.trim() : '';
   if (mode !== 'abbruch' && !text) { toast('Schreib erst deine Antwort.'); return; }
-  if (mode !== 'abbruch' && ex.turns.length + 1 >= ex.total) mode = 'letzte';
+  if (mode !== 'abbruch' && countedTurns(ex) + (ex.followup ? 0 : 1) >= ex.total) mode = 'letzte';
   ex.loading = true; ex.error = ''; ex.draft = text;
   render();
   scrollTo(0, document.body.scrollHeight);
@@ -438,14 +497,14 @@ async function examSend(mode) {
     const res = await (ex.card ? ai.examTurn : ai.caseTurn)(S.settings, ex, text, mode);
     if (session !== current) return;
     if (mode !== 'abbruch') {
-      ex.turns.push({ q: ex.question, a: (res.verstanden || '').trim() || text, reaktion: res.reaktion, bewertung: res.bewertung, prozent: percent(res.prozent), fehlt: res.fehlt || [] });
+      ex.turns.push({ q: ex.question, a: (res.verstanden || '').trim() || text, reaktion: res.reaktion, bewertung: res.bewertung, prozent: percent(res.prozent), fehlt: res.fehlt || [], followup: !!ex.followup, probing: mode === 'weiter' && !!res.nachhaken && !ex.followup });
       ex.draft = '';
       if (res.bewertung === 'richtig') S.stats.aiRight++;
       // Die Einstiegsfrage stammt von der Karte und zählt für deren Lernstand
       if (ex.card && ex.turns.length === 1) applyRating(session.queue[0], { richtig: 'good', teilweise: 'mid', falsch: 'bad' }[res.bewertung]);
       else { checkAchievements(); persist(); }
     }
-    if (mode === 'weiter') ex.question = res.frage;
+    if (mode === 'weiter') { ex.followup = !!res.nachhaken && !ex.followup; ex.question = res.frage; }
     else {
       ex.final = res; ex.question = '';
       if (!ex.card) {
@@ -467,9 +526,9 @@ async function examSend(mode) {
 function viewExam() {
   const ex = session.exam;
   const label = { richtig: ['good', 'Richtig'], teilweise: ['mid', 'Teilweise'], falsch: ['bad', 'Nicht richtig'] };
-  const asked = ex.turns.length + (ex.final ? 0 : 1);
+  const asked = Math.min(ex.total, countedTurns(ex) + (ex.final || ex.followup ? 0 : 1));
   const head = `<div class="sess-head"><button class="icon-btn" data-act="quit" aria-label="Beenden">✕</button>
-    <div class="progress slim"><i style="width:${pct(ex.turns.length, ex.total)}%"></i></div>
+    <div class="progress slim"><i style="width:${pct(countedTurns(ex), ex.total)}%"></i></div>
     <span class="muted">${ex.final ? 'fertig' : `Frage ${asked}/${ex.total}`}</span></div>
     <div class="deck-label">${ex.card ? `Prüfungsgespräch · ${esc(ex.card.deck)}` : `Fall · ${esc(ex.title || ex.fach)}`}</div>`;
   if (!ex.card && !ex.question && !ex.final) return head + '<section class="card center tall"><div class="spinner"></div><h2>Dein Fall wird vorbereitet …</h2><p class="muted">Das dauert einen Moment.</p></section>';
@@ -477,7 +536,7 @@ function viewExam() {
   const turns = ex.turns.map((t, i) => `
     <div class="bubble examiner"><small>Prüfer</small><p class="pre">${i === 0 ? rich(t.q) : esc(t.q)}</p></div>
     <div class="bubble me"><p class="pre">${esc(t.a)}</p></div>
-    <div class="bubble examiner verdict ${label[t.bewertung][0]}"><small>${label[t.bewertung][1]}${t.prozent != null ? ` · ${t.prozent} % richtig` : ''}</small><p class="pre">${esc(t.reaktion)}</p>
+    <div class="bubble examiner verdict ${t.probing ? 'mid' : label[t.bewertung][0]}"><small>${t.probing ? 'Noch nicht vollständig' : label[t.bewertung][1]}${t.prozent != null ? ` · ${t.prozent} % richtig` : ''}</small><p class="pre">${esc(t.reaktion)}</p>
       ${t.fehlt && t.fehlt.length ? `<p class="muted small">Das hat gefehlt:</p><ul>${t.fehlt.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}</div>`).join('');
 
   if (ex.final) {
@@ -772,6 +831,8 @@ function viewMehr() {
       <h2>KI-Prüfer</h2>
       <label class="field"><span>Anthropic-API-Schlüssel</span><input type="password" data-set="apiKey" value="${esc(s.apiKey)}" placeholder="sk-ant-…" autocomplete="off"></label>
       <label class="field"><span>Modell</span><select data-set="model">${ai.MODELS.map((m) => `<option value="${m.id}" ${m.id === s.model ? 'selected' : ''}>${m.label}</option>`).join('')}</select></label>
+      <label class="field"><span>OpenAI-Schlüssel für bessere Spracherkennung (optional)</span><input type="password" data-set="openaiKey" value="${esc(s.openaiKey)}" placeholder="sk-…" autocomplete="off"></label>
+      <p class="muted small">Ohne diesen Schlüssel nutzt der Sprech-Knopf die Erkennung des Geräts. Mit Schlüssel wird die Aufnahme an OpenAI gesendet und dort in Text umgewandelt; das versteht Fachbegriffe deutlich besser.</p>
       <label class="field"><span>Strenge der Bewertung</span>
         <input type="range" min="1" max="3" step="1" data-set="strict" value="${s.strict || 1}">
         <span class="scale"><span>gnädig</span><span>ausgewogen</span><span>streng</span></span></label>
@@ -976,7 +1037,7 @@ const actions = {
     el.disabled = false; el.textContent = 'Schlüssel testen';
   },
   export: () => {
-    const copy = { ...S, settings: { ...S.settings, apiKey: '' } };
+    const copy = { ...S, settings: { ...S.settings, apiKey: '', openaiKey: '' } };
     const url = URL.createObjectURL(new Blob([JSON.stringify(copy)], { type: 'application/json' }));
     const a = Object.assign(document.createElement('a'), { href: url, download: `m3-coach-backup-${todayKey()}.json` });
     a.click();
@@ -1024,8 +1085,8 @@ document.addEventListener('change', async (e) => {
       const data = JSON.parse(await el.files[0].text());
       if (!Array.isArray(data.cards) || !data.settings) throw new Error();
       if (!confirm(`Backup mit ${data.cards.length} Karten einspielen? Der aktuelle Stand wird ersetzt.`)) return;
-      const key = S.settings.apiKey;
-      S = { ...fresh(), ...data, settings: { ...fresh().settings, ...data.settings, apiKey: key } };
+      const { apiKey, openaiKey } = S.settings;
+      S = { ...fresh(), ...data, settings: { ...fresh().settings, ...data.settings, apiKey, openaiKey } };
       persist(); render(); toast('Backup eingespielt');
     } catch { toast('Das ist kein gültiges Backup.'); }
   }

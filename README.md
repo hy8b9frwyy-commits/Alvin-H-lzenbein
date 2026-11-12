@@ -47,4 +47,5 @@ Dann http://localhost:8000 öffnen. Unter „Karten“ gibt es Beispielkarten zu
 - `js/app.js`: Ansichten und Lernlogik
 - `js/anki.js`: Import (Pakete und Text)
 - `js/ai.js`: Anbindung an die Claude-API
+- `js/speech.js`: optionale Spracherkennung über die OpenAI-API
 - `vendor/`: gebündelte Bibliotheken (Anthropic-SDK, sql.js, fflate, fzstd)
