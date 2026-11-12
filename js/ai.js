@@ -38,7 +38,7 @@ export const MODELS = [
 export const DEFAULT_MODEL = MODELS[0].id;
 
 // Wie streng bewertet wird (Einstellung unter „Mehr“): 1 gnädig, 2 ausgewogen, 3 streng.
-const DICTATED = 'Die Antworten sind oft per Spracherkennung diktiert: Falsch erkannte, verstümmelte oder klanglich ähnliche Fachbegriffe deutest du wohlwollend so, wie sie offensichtlich gemeint waren, und wertest sie nicht als Fehler.';
+const DICTATED = `Die Antworten werden meist eingesprochen und von einer allgemeinen Spracherkennung in Text umgewandelt, die medizinische Fachsprache schlecht kennt. Sie macht aus Fachbegriffen, Eigennamen, Medikamenten und Abkürzungen oft ähnlich klingende Alltagswörter, zerlegt lange Wörter in mehrere kurze oder lässt Silben weg. Lies die Antwort deshalb nie Wort für Wort, sondern als Ganzes: Rekonstruiere aus Klang, Satzzusammenhang, Frage und Thema, was sie tatsächlich gesagt hat. Klingt ein Wort oder eine Wortfolge wie ein Fachbegriff, der an dieser Stelle fachlich passt, dann hat sie diesen Begriff gesagt, und er zählt als genannt. Erfinde dabei nichts hinzu: Was in der Antwort auch klanglich nirgends vorkommt, gilt als nicht gesagt. In "verstanden" gibst du ihre Antwort so wieder, wie du sie nach dieser Rekonstruktion verstanden hast, in ihren Worten und ohne inhaltliche Ergänzungen; darauf beziehen sich Bewertung, Prozentwert und fehlende Punkte.`;
 const STRICTNESS = {
   1: `Bewerte großzügig. Es zählt, ob sie den Kern verstanden hat: Sinngemäß richtige, knappe oder umgangssprachlich formulierte Antworten gelten als "richtig", auch wenn Details oder einzelne Punkte fehlen, solange nichts Wesentliches falsch ist. "teilweise" vergibst du erst, wenn ein zentraler Teil fehlt, und "falsch" nur, wenn der Kern verfehlt oder etwas klinisch Gefährliches gesagt wurde. Fehlende Details nennst du freundlich in der Rückmeldung, ohne die Bewertung abzustufen. ${DICTATED}`,
   2: `Bewerte ausgewogen: "richtig", wenn die wesentlichen Punkte genannt sind; "teilweise", wenn wichtige Punkte fehlen oder etwas ungenau ist; "falsch", wenn der Kern verfehlt wurde. ${DICTATED}`,
@@ -104,12 +104,13 @@ const GRADE_SCHEMA = {
   type: 'object',
   properties: {
     bewertung: { type: 'string', enum: ['richtig', 'teilweise', 'falsch'] },
+    verstanden: { type: 'string' },
     prozent: { type: 'integer' },
     feedback: { type: 'string' },
     fehlt: { type: 'array', items: { type: 'string' } },
     nachfrage: { type: 'string' },
   },
-  required: ['bewertung', 'prozent', 'feedback', 'fehlt', 'nachfrage'],
+  required: ['verstanden', 'bewertung', 'prozent', 'feedback', 'fehlt', 'nachfrage'],
   additionalProperties: false,
 };
 
@@ -176,13 +177,14 @@ Am Ende der Prüfung gibst du ein Gesamturteil: eine Note nach der M3-Skala, die
 const BEWERTUNG = { type: 'string', enum: ['richtig', 'teilweise', 'falsch'] };
 const EXAM_TURN_SCHEMA = {
   type: 'object',
-  properties: { reaktion: { type: 'string' }, bewertung: BEWERTUNG, prozent: { type: 'integer' }, fehlt: { type: 'array', items: { type: 'string' } }, frage: { type: 'string' } },
-  required: ['reaktion', 'bewertung', 'prozent', 'fehlt', 'frage'],
+  properties: { verstanden: { type: 'string' }, reaktion: { type: 'string' }, bewertung: BEWERTUNG, prozent: { type: 'integer' }, fehlt: { type: 'array', items: { type: 'string' } }, frage: { type: 'string' } },
+  required: ['verstanden', 'reaktion', 'bewertung', 'prozent', 'fehlt', 'frage'],
   additionalProperties: false,
 };
 const EXAM_FINAL_SCHEMA = {
   type: 'object',
   properties: {
+    verstanden: { type: 'string' },
     reaktion: { type: 'string' },
     bewertung: BEWERTUNG,
     prozent: { type: 'integer' },
@@ -192,7 +194,7 @@ const EXAM_FINAL_SCHEMA = {
     luecken: { type: 'array', items: { type: 'string' } },
     fazit: { type: 'string' },
   },
-  required: ['reaktion', 'bewertung', 'prozent', 'fehlt', 'note', 'staerken', 'luecken', 'fazit'],
+  required: ['verstanden', 'reaktion', 'bewertung', 'prozent', 'fehlt', 'note', 'staerken', 'luecken', 'fazit'],
   additionalProperties: false,
 };
 

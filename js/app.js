@@ -6,7 +6,7 @@ import { NACHRICHTEN } from '../nachrichten.js';
 // ---------- Zustand ----------
 
 const INTERVALS = [0, 1, 3, 7, 14, 30]; // Tage bis zur nächsten Wiederholung je Stufe
-const VERSION = 14; // bei jeder Änderung hochzählen, wird unter „Mehr“ angezeigt
+const VERSION = 15; // bei jeder Änderung hochzählen, wird unter „Mehr“ angezeigt
 const EXAM_QUESTIONS = 5; // Fragen pro Prüfungsgespräch (Einstieg + Anschlussfragen)
 const CASE_QUESTIONS = 7; // Fragen pro Fallbeispiel
 const CASE_SUBJECTS = [
@@ -438,7 +438,7 @@ async function examSend(mode) {
     const res = await (ex.card ? ai.examTurn : ai.caseTurn)(S.settings, ex, text, mode);
     if (session !== current) return;
     if (mode !== 'abbruch') {
-      ex.turns.push({ q: ex.question, a: text, reaktion: res.reaktion, bewertung: res.bewertung, prozent: percent(res.prozent), fehlt: res.fehlt || [] });
+      ex.turns.push({ q: ex.question, a: (res.verstanden || '').trim() || text, reaktion: res.reaktion, bewertung: res.bewertung, prozent: percent(res.prozent), fehlt: res.fehlt || [] });
       ex.draft = '';
       if (res.bewertung === 'richtig') S.stats.aiRight++;
       // Die Einstiegsfrage stammt von der Karte und zählt für deren Lernstand
@@ -687,6 +687,7 @@ function viewSession() {
       <small>${i ? 'Nachfrage' : 'Bewertung'}</small>
       <h3>${label[r.bewertung][1]}${percent(r.prozent) != null ? ` · ${percent(r.prozent)} % richtig` : ''}</h3>
       ${percent(r.prozent) != null ? `<div class="progress slim score"><i style="width:${percent(r.prozent)}%"></i></div>` : ''}
+      ${r.verstanden ? `<p class="muted small">So habe ich dich verstanden: „${esc(r.verstanden)}“</p>` : ''}
       <p class="pre">${esc(r.feedback)}</p>
       ${r.fehlt.length ? `<p class="muted small">Das hat gefehlt:</p><ul>${r.fehlt.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
     </section>`).join('');
