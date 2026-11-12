@@ -8,7 +8,6 @@ Reine Web-App ohne Server und ohne Build-Schritt. Alle Daten bleiben auf dem Ger
 
 - **Import aus Anki** als Stapelpaket (.apkg) inklusive Bildern, per Text-Export oder per Einfügen
 - **Mündliche Prüfung**: Frage lesen, laut antworten, Musterantwort vergleichen, selbst bewerten
-- **Multiple Choice**: Optionen aus den eigenen Karten, mit API-Schlüssel von der KI erzeugt
 - **KI-Prüfer**: Antwort tippen oder diktieren, die KI bewertet anhand der Karte
 - **Prüfungsgespräch**: Einstiegsfrage von einer Karte, dann Anschlussfragen, die auf den Antworten aufbauen, am Ende eine Note
 - **Heute-Seite**: Countdown, Tagesziel, Serie, Fortschritt pro Stapel, Erfolge

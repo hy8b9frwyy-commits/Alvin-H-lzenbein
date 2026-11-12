@@ -499,7 +499,6 @@ function viewLernen() {
 
   const modes = [
     { id: 'oral', icon: '🗣️', name: 'Mündliche Prüfung', desc: 'Frage lesen, laut antworten, mit der Musterantwort vergleichen.' },
-    { id: 'mc', icon: '✅', name: 'Multiple Choice', desc: hasKey ? 'Die KI baut passende Antwortoptionen zu deinen Karten.' : 'Vier Optionen aus deinen Karten. Mit KI-Schlüssel werden die Optionen besser.' },
     { id: 'ki', icon: '🎓', name: 'KI-Prüfer', desc: hasKey ? 'Karte für Karte: Antwort tippen oder diktieren, die KI bewertet.' : 'Braucht einen API-Schlüssel (unter „Mehr“).', off: !hasKey },
     { id: 'exam', icon: '👩‍⚕️', name: 'Prüfungsgespräch', desc: hasKey ? `Wie im M3: eine Einstiegsfrage, dann ${EXAM_QUESTIONS - 1} Anschlussfragen, die auf deinen Antworten aufbauen. Am Ende gibt es eine Note.` : 'Braucht einen API-Schlüssel (unter „Mehr“).', off: !hasKey },
   ];
