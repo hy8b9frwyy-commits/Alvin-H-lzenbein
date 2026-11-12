@@ -6,6 +6,7 @@ import { NACHRICHTEN } from '../nachrichten.js';
 // ---------- Zustand ----------
 
 const INTERVALS = [0, 1, 3, 7, 14, 30]; // Tage bis zur nächsten Wiederholung je Stufe
+const VERSION = 12; // bei jeder Änderung hochzählen, wird unter „Mehr“ angezeigt
 const EXAM_QUESTIONS = 5; // Fragen pro Prüfungsgespräch (Einstieg + Anschlussfragen)
 const CASE_QUESTIONS = 7; // Fragen pro Fallbeispiel
 const CASE_SUBJECTS = [
@@ -724,6 +725,11 @@ function viewMehr() {
       <button class="btn" data-act="export">Backup herunterladen</button>
       <label class="btn filebtn">Backup einspielen<input type="file" accept="application/json,.json" data-change="restore" hidden></label>
       <button class="btn ghost danger" data-act="reset">Lernstand zurücksetzen</button>
+    </section>
+    <section class="card">
+      <h2>App</h2>
+      <p class="muted small">Version ${VERSION}. Fehlt eine neue Funktion, hier aktualisieren. Karten und Lernstand bleiben erhalten.</p>
+      <button class="btn" data-act="update">App aktualisieren</button>
     </section>`;
 }
 
@@ -908,6 +914,17 @@ const actions = {
     const a = Object.assign(document.createElement('a'), { href: url, download: `m3-coach-backup-${todayKey()}.json` });
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+  update: async (el) => {
+    el.disabled = true; el.textContent = 'Aktualisiere …';
+    try {
+      const reg = await navigator.serviceWorker?.getRegistration();
+      if (reg) await reg.update();
+      for (const k of await caches.keys()) await caches.delete(k);
+      // Dateien am Browser-Zwischenspeicher vorbei frisch laden
+      await Promise.all(['./', 'index.html', 'js/app.js', 'js/ai.js', 'js/anki.js', 'js/store.js', 'css/style.css', 'nachrichten.js', 'sw.js'].map((u) => fetch(u, { cache: 'reload' })));
+    } catch { /* offline: einfach neu laden */ }
+    location.reload();
   },
   reset: () => {
     if (!confirm('Wirklich den gesamten Lernstand zurücksetzen? Die Karten bleiben erhalten.')) return;
