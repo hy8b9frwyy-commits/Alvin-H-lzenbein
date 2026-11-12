@@ -1,0 +1,15 @@
+{
+  "name": "M3 Coach",
+  "short_name": "M3 Coach",
+  "description": "Dein Lernbegleiter fürs M3",
+  "lang": "de",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#f6f3ee",
+  "theme_color": "#0f8f7e",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

@@ -1,0 +1,128 @@
+// Liest den Text-Export aus Anki ("Notizen als Text" / "Notes in Plain Text")
+// sowie einfache CSV-/TSV-Tabellen (Frage, Antwort[, Fach]).
+
+const SEPARATORS = { tab: '\t', comma: ',', semicolon: ';', space: ' ', pipe: '|', colon: ':' };
+
+function parseRows(text, sep) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; } else quoted = false;
+      } else field += ch;
+    } else if (ch === '"' && field === '') {
+      quoted = true;
+    } else if (ch === sep) {
+      row.push(field); field = '';
+    } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(field); field = '';
+      rows.push(row); row = [];
+    } else field += ch;
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows.filter((r) => r.some((f) => f.trim() !== ''));
+}
+
+function toText(value, isHtml) {
+  let out = value;
+  if (isHtml) {
+    const doc = new DOMParser().parseFromString(value, 'text/html');
+    doc.querySelectorAll('style,script').forEach((el) => el.remove());
+    // Export "Karten als Text": Rückseite enthält Vorderseite + <hr id=answer>
+    const hr = doc.querySelector('hr#answer');
+    if (hr) { while (hr.previousSibling) hr.previousSibling.remove(); hr.remove(); }
+    doc.querySelectorAll('img').forEach((el) => el.replaceWith('[Bild]'));
+    doc.querySelectorAll('br').forEach((el) => el.replaceWith('\n'));
+    doc.querySelectorAll('hr').forEach((el) => el.replaceWith('\n'));
+    doc.querySelectorAll('li').forEach((el) => { el.prepend('• '); el.append('\n'); });
+    doc.querySelectorAll('td,th').forEach((el) => el.append('  '));
+    doc.querySelectorAll('div,p,tr,h1,h2,h3,h4,h5,h6,ul,ol,table').forEach((el) => { el.prepend('\n'); el.append('\n'); });
+    out = doc.body.textContent;
+  }
+  return out
+    .replace(/\[sound:[^\]]*\]/g, '')
+    .replace(/ /g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function hash(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+
+const CLOZE = /\{\{c\d+::([\s\S]*?)(?:::([\s\S]*?))?\}\}/g;
+
+export function parseAnki(raw, fallbackDeck = 'Importiert') {
+  let text = raw.replace(/^﻿/, '');
+  const meta = {};
+  while (text.startsWith('#')) {
+    const end = text.indexOf('\n');
+    const line = (end === -1 ? text : text.slice(0, end)).trim();
+    const m = line.match(/^#([^:]+):(.*)$/);
+    if (m) meta[m[1].trim().toLowerCase()] = m[2].trim();
+    text = end === -1 ? '' : text.slice(end + 1);
+  }
+
+  let sep = SEPARATORS[(meta.separator || '').toLowerCase()] || (meta.separator && meta.separator.length === 1 ? meta.separator : null);
+  if (!sep) {
+    const first = text.split('\n', 1)[0];
+    sep = first.includes('\t') ? '\t' : first.includes(';') ? ';' : ',';
+  }
+
+  const col = (name) => (meta[name + ' column'] ? parseInt(meta[name + ' column'], 10) - 1 : -1);
+  const guidCol = col('guid');
+  const typeCol = col('notetype');
+  const deckCol = col('deck');
+  const tagsCol = col('tags');
+  const special = new Set([guidCol, typeCol, deckCol, tagsCol].filter((i) => i >= 0));
+  const isHtml = meta.html ? meta.html === 'true' : /<[a-z][^>]*>/i.test(text);
+
+  const rows = parseRows(text, sep);
+  const cards = [];
+  let skipped = 0;
+  let hadImages = false;
+  const seenIds = new Set();
+
+  for (const row of rows) {
+    const fields = row.filter((_, i) => !special.has(i)).map((f) => {
+      if (/<img/i.test(f)) hadImages = true;
+      return toText(f, isHtml);
+    });
+    // Tabelle ohne Anki-Kopfzeilen: dritte Spalte als Fach interpretieren
+    let deck = deckCol >= 0 ? (row[deckCol] || '').trim() : '';
+    let content = fields;
+    if (deckCol < 0 && !Object.keys(meta).length && fields.length >= 3 && fields[2].length <= 60) {
+      deck = fields[2];
+      content = fields.slice(0, 2);
+    }
+    let front = content[0] || '';
+    let back = content[1] || '';
+    const extras = content.slice(2).filter(Boolean);
+
+    if (/\{\{c\d+::/.test(front)) {
+      const full = front.replace(CLOZE, '$1');
+      front = front.replace(CLOZE, (_, answer, hint) => (hint ? `[${hint}]` : '[ … ]'));
+      back = [full, back].filter(Boolean).join('\n\n');
+    }
+    if (extras.length) back = [back, ...extras].filter(Boolean).join('\n\n');
+    if (!front || !back) { skipped++; continue; }
+
+    deck = (deck || fallbackDeck).replace(/::/g, ' › ');
+    const guid = guidCol >= 0 ? (row[guidCol] || '').trim() : '';
+    const id = guid ? 'g:' + guid : 'h:' + hash(deck + '|' + front);
+    if (seenIds.has(id)) { skipped++; continue; }
+    seenIds.add(id);
+    const tags = tagsCol >= 0 ? (row[tagsCol] || '').trim() : '';
+    cards.push({ id, front, back, deck, tags });
+  }
+
+  return { cards, skipped, hadImages, decks: [...new Set(cards.map((c) => c.deck))] };
+}
