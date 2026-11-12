@@ -1,6 +1,9 @@
 // KI-Prüfer: ruft die Claude-API direkt aus dem Browser auf.
 // Der API-Schlüssel liegt nur lokal auf dem Gerät (App-Einstellungen).
 
+// Bilder werden nicht mitgeschickt; im Text steht an ihrer Stelle [Bild].
+const plain = (t) => t.replace(/⟦img:[^⟧]+⟧/g, '[Bild]');
+
 let sdkPromise;
 const loadSdk = () => (sdkPromise ||= import('../vendor/anthropic-sdk.js').then((m) => m.default));
 
@@ -59,7 +62,7 @@ async function request(settings, { system, messages, schema }) {
 
 const EXAMINER_SYSTEM = `Du bist ein erfahrener, fairer und freundlicher Prüfer in der mündlich-praktischen Prüfung des Dritten Abschnitts der Ärztlichen Prüfung (M3) in Deutschland. Du prüfst eine Medizinstudentin kurz vor dem Examen und sprichst sie mit "du" an.
 
-Du bekommst eine Prüfungsfrage, die Referenzantwort von ihrer eigenen Lernkarte und ihre Antwort. Bewerte, ob ihre Antwort den Kern der Referenzantwort inhaltlich trifft. Wortlaut, Reihenfolge und Tippfehler spielen keine Rolle, und fachlich korrekte Ergänzungen über die Karte hinaus sind willkommen. Die Referenzantwort ist der Maßstab; falls sie dir fachlich veraltet oder falsch erscheint, sag das im Feedback ausdrücklich, statt stillschweigend davon abzuweichen.
+Du bekommst eine Prüfungsfrage, die Referenzantwort von ihrer eigenen Lernkarte und ihre Antwort. Bewerte, ob ihre Antwort den Kern der Referenzantwort inhaltlich trifft. Steht in Frage oder Referenzantwort die Marke [Bild], gehört dort ein Bild hin, das du nicht sehen kannst; bewerte dann nur anhand des Textes und werte fehlende Bildinhalte nicht als Fehler. Wortlaut, Reihenfolge und Tippfehler spielen keine Rolle, und fachlich korrekte Ergänzungen über die Karte hinaus sind willkommen. Die Referenzantwort ist der Maßstab; falls sie dir fachlich veraltet oder falsch erscheint, sag das im Feedback ausdrücklich, statt stillschweigend davon abzuweichen.
 
 Dein Feedback ist konkret und kurz (zwei bis vier Sätze): was gut war, was fachlich nicht stimmt. In "fehlt" stehen die wichtigen Punkte der Referenzantwort, die sie nicht genannt hat, als kurze Stichpunkte (leer, wenn nichts fehlt). In "nachfrage" stellst du genau eine weiterführende Frage, wie sie ein Prüfer im M3 als Nächstes stellen würde (zum Beispiel zu Differenzialdiagnosen, nächstem diagnostischen Schritt, Therapie oder Komplikationen), passend zum Thema der Karte.
 
@@ -82,7 +85,7 @@ const GRADE_SCHEMA = {
 export async function grade(settings, card, answer, history) {
   const userText = history.length
     ? `Meine Antwort auf deine Nachfrage:\n${answer}`
-    : `Fach/Stapel: ${card.deck}\n\nPrüfungsfrage:\n${card.front}\n\nReferenzantwort (Lernkarte):\n${card.back}\n\nMeine Antwort:\n${answer}`;
+    : `Fach/Stapel: ${card.deck}\n\nPrüfungsfrage:\n${plain(card.front)}\n\nReferenzantwort (Lernkarte):\n${plain(card.back)}\n\nMeine Antwort:\n${answer}`;
   const messages = [...history, { role: 'user', content: userText }];
   const { data, content } = await request(settings, { system: EXAMINER_SYSTEM, messages, schema: GRADE_SCHEMA });
   // Antwortblöcke unverändert zurückgeben, damit der Verlauf fortgesetzt werden kann.
@@ -115,7 +118,7 @@ const MC_SCHEMA = {
 
 // Erzeugt Antwortoptionen für mehrere Karten in einer Anfrage.
 export async function makeChoices(settings, cards) {
-  const list = cards.map((c) => `id: ${c.id}\nFach: ${c.deck}\nFrage: ${c.front}\nAntwort: ${c.back}`).join('\n\n---\n\n');
+  const list = cards.map((c) => `id: ${c.id}\nFach: ${c.deck}\nFrage: ${plain(c.front)}\nAntwort: ${plain(c.back)}`).join('\n\n---\n\n');
   const { data } = await request(settings, {
     system: MC_SYSTEM,
     messages: [{ role: 'user', content: `Erstelle für jede dieser ${cards.length} Karten eine Aufgabe:\n\n${list}` }],

@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { parseAnki, parseApkg, isPackage } from './anki.js';
+import { parseAnki, parseApkg, isPackage, IMG_RE } from './anki.js';
 import * as ai from './ai.js';
 import { NACHRICHTEN } from '../nachrichten.js';
 
@@ -121,6 +121,25 @@ const sender = () => S.settings.sender || NACHRICHTEN.absender;
 
 // ---------- Hilfen ----------
 
+// Kartentext sicher ausgeben und Bildmarken durch Bilder ersetzen
+const rich = (s) => esc(s).replace(IMG_RE, (_, name) => `<img class="cardimg" data-media="${name}" data-act="zoom" alt="Bild">`);
+const hasImage = (s) => s.includes('⟦img:');
+const imageUrls = new Map();
+
+function setHtml(html) {
+  $app.innerHTML = html;
+  for (const img of $app.querySelectorAll('img[data-media]')) {
+    const name = img.dataset.media;
+    if (!imageUrls.has(name)) {
+      imageUrls.set(name, store.getMedia(name).then((m) => (m ? URL.createObjectURL(new Blob([m.data], { type: m.type })) : ''), () => ''));
+    }
+    imageUrls.get(name).then((url) => {
+      if (url) img.src = url;
+      else img.replaceWith(Object.assign(document.createElement('span'), { className: 'noimg', textContent: '[Bild fehlt]' }));
+    });
+  }
+}
+
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -203,7 +222,7 @@ function buildQueue(deck, kind) {
   return [...due, ...fresh].map((c) => ({ id: c.id }));
 }
 
-const shortEnough = (c) => c.back.length <= 140 && !c.back.includes('\n');
+const shortEnough = (c) => c.back.length <= 140 && !c.back.includes('\n') && !hasImage(c.back);
 
 function fallbackOptions(card) {
   const others = S.cards.filter((c) => c.id !== card.id && shortEnough(c) && c.back !== card.back);
@@ -413,8 +432,8 @@ function viewSession() {
   const item = session.queue[session.idx];
   const card = cardById(item.id);
   const head = `${sessionHeader()}<div class="deck-label">${esc(card.deck)}${item.retry ? ' · nochmal' : !card.seen ? ' · neu' : ''}</div>`;
-  const question = `<section class="card question"><p class="pre">${esc(card.front)}</p></section>`;
-  const answer = `<section class="card answer"><small>Musterantwort</small><p class="pre">${esc(card.back)}</p></section>`;
+  const question = `<section class="card question"><p class="pre">${rich(card.front)}</p></section>`;
+  const answer = `<section class="card answer"><small>Musterantwort</small><p class="pre">${rich(card.back)}</p></section>`;
 
   if (session.mode === 'oral') {
     return head + question + (session.stage === 'q'
@@ -428,7 +447,7 @@ function viewSession() {
   if (session.mode === 'mc') {
     const opts = session.options.map((o, i) => {
       const cls = session.picked === null ? '' : o.ok ? 'right' : i === session.picked ? 'wrong' : 'dim';
-      return `<button class="opt ${cls}" data-act="pick" data-i="${i}" ${session.picked !== null ? 'disabled' : ''}><span class="pre">${esc(o.text)}</span></button>`;
+      return `<button class="opt ${cls}" data-act="pick" data-i="${i}" ${session.picked !== null ? 'disabled' : ''}><span class="pre">${rich(o.text)}</span></button>`;
     }).join('');
     return head + question + `<div class="opts">${opts}</div>` + (session.picked !== null ? `${answer}<button class="btn primary" data-act="next">Weiter</button>` : '');
   }
@@ -451,7 +470,7 @@ function viewSession() {
        <textarea id="answer" rows="5" placeholder="${last ? 'Deine Antwort auf die Nachfrage (optional)' : 'Deine Antwort … (Tipp: Diktierfunktion der Tastatur nutzen)'}"></textarea>
        <button class="btn ${last ? '' : 'primary'}" data-act="send">${last ? 'Nachfrage beantworten' : 'Antwort abschicken'}</button>
        ${last ? `<button class="btn primary" data-act="next">Nächste Karte</button>` : `<button class="btn ghost" data-act="giveup">Weiß ich nicht</button>`}`;
-  return head + question + results + (ki.results.length ? `<details class="card"><summary>Musterantwort von deiner Karte</summary><p class="pre">${esc(card.back)}</p></details>` : '') + input
+  return head + question + results + (ki.results.length ? `<details class="card"><summary>Musterantwort von deiner Karte</summary><p class="pre">${rich(card.back)}</p></details>` : '') + input
     + (ki.results.length ? `<p class="muted small center">Die KI kann sich irren. Im Zweifel gilt deine Karte bzw. das Lehrbuch.</p>` : '');
 }
 
@@ -466,9 +485,12 @@ function viewKarten() {
       <h2>${pendingImport.cards.length} Karten erkannt</h2>
       <p class="muted">${pendingImport.decks.length} ${pendingImport.decks.length === 1 ? 'Stapel' : 'Stapel'}: ${esc(pendingImport.decks.slice(0, 6).join(', '))}${pendingImport.decks.length > 6 ? ' …' : ''}</p>
       ${pendingImport.skipped ? `<p class="muted small">${pendingImport.skipped} Zeilen übersprungen (leer, doppelt oder ohne Antwort).</p>` : ''}
-      ${pendingImport.hadImages ? `<p class="muted small">Hinweis: Bilder werden nicht übernommen und als [Bild] markiert.</p>` : ''}
-      ${pendingImport.cards[0] ? `<div class="sample"><small>Beispiel</small><p class="pre"><b>${esc(pendingImport.cards[0].front)}</b></p><p class="pre">${esc(pendingImport.cards[0].back)}</p></div>` : ''}
-      <div class="rate"><button class="btn ghost" data-act="cancelimport">Abbrechen</button><button class="btn primary" data-act="confirmimport">Importieren</button></div>
+      ${pendingImport.images.size ? `<p class="muted small">${pendingImport.imagesAvailable
+        ? `🖼️ ${pendingImport.imagesAvailable} von ${pendingImport.images.size} Bildern sind in der Datei und werden übernommen.`
+        : 'Die Karten enthalten Bilder, in der Datei sind aber keine. Für Bilder ein Stapelpaket (.apkg) mit Haken bei „Einschließlich Medien“ exportieren.'}</p>` : ''}
+      ${pendingImport.progress ? `<div class="progress"><i style="width:${pendingImport.progress}%"></i></div><p class="muted small">Bilder werden gespeichert … bitte die App offen lassen.</p>` : ''}
+      ${pendingImport.cards[0] ? `<div class="sample"><small>Beispiel</small><p class="pre"><b>${esc(pendingImport.cards[0].front.replace(IMG_RE, '[Bild]'))}</b></p><p class="pre">${esc(pendingImport.cards[0].back.replace(IMG_RE, '[Bild]'))}</p></div>` : ''}
+      ${pendingImport.progress ? '' : `<div class="rate"><button class="btn ghost" data-act="cancelimport">Abbrechen</button><button class="btn primary" data-act="confirmimport">Importieren</button></div>`}
     </section>` : '';
 
   return `
@@ -478,13 +500,13 @@ function viewKarten() {
       <h2>Aus Anki importieren</h2>
       <p class="muted small"><b>Direkt am Handy</b> (AnkiMobile oder AnkiDroid):</p>
       <ol class="steps">
-        <li>In der Anki-App den Stapel exportieren bzw. teilen, Format <b>Stapelpaket (.apkg)</b>. Medien und Lernstand werden nicht gebraucht.</li>
+        <li>In der Anki-App den Stapel exportieren bzw. teilen, Format <b>Stapelpaket (.apkg)</b>, mit Medien, damit die Bilder dabei sind.</li>
         <li><b>„In Dateien sichern“</b> wählen</li>
         <li>Hier auf „Datei auswählen“ tippen und die .apkg-Datei öffnen</li>
       </ol>
       <label class="btn primary filebtn">Datei auswählen<input type="file" data-change="file" hidden></label>
       <details><summary class="muted small">Vom Computer aus</summary>
-        <p class="muted small">In Anki <b>Datei → Exportieren</b>, als <b>Stapelpaket (.apkg)</b> oder <b>Notizen als Text (.txt)</b> mit Stapelname und eindeutiger Kennung. Datei aufs Handy schicken und hier auswählen.</p></details>
+        <p class="muted small">In Anki <b>Datei → Exportieren</b>, am besten als <b>Stapelpaket (.apkg)</b> mit Haken bei „Einschließlich Medien“ (nur so kommen Bilder mit). Alternativ <b>Notizen als Text (.txt)</b> mit Stapelname und eindeutiger Kennung, dann ohne Bilder. Datei aufs Handy schicken und hier auswählen.</p></details>
       <p class="muted small">Ein erneuter Import aktualisiert die Karten, der Lernstand bleibt erhalten.</p>
     </section>
     <section class="card">
@@ -525,7 +547,7 @@ function viewMehr() {
     </section>
     <section class="card">
       <h2>Backup</h2>
-      <p class="muted small">Alle Daten liegen nur auf diesem Gerät. Ab und zu sichern lohnt sich.</p>
+      <p class="muted small">Alle Daten liegen nur auf diesem Gerät. Ab und zu sichern lohnt sich. Bilder sind nicht im Backup; dafür das Anki-Paket erneut importieren.</p>
       <button class="btn" data-act="export">Backup herunterladen</button>
       <label class="btn filebtn">Backup einspielen<input type="file" accept="application/json,.json" data-change="restore" hidden></label>
       <button class="btn ghost danger" data-act="reset">Lernstand zurücksetzen</button>
@@ -535,8 +557,8 @@ function viewMehr() {
 function render() {
   $tabs.hidden = !!session;
   document.body.classList.toggle('in-session', !!session);
-  if (session) { $app.innerHTML = viewSession(); return; }
-  $app.innerHTML = { heute: viewHeute, lernen: viewLernen, karten: viewKarten, mehr: viewMehr }[tab]();
+  if (session) { setHtml(viewSession()); return; }
+  setHtml({ heute: viewHeute, lernen: viewLernen, karten: viewKarten, mehr: viewMehr }[tab]());
   for (const b of $tabs.querySelectorAll('button')) b.classList.toggle('on', b.dataset.tab === tab);
 }
 
@@ -548,10 +570,9 @@ function stageImport(text, name) {
 
 async function stageFile(file) {
   const name = file.name.replace(/\.[^.]+$/, '');
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  if (!isPackage(bytes)) { showImport(parseAnki(new TextDecoder().decode(bytes), name)); return; }
+  if (!(await isPackage(file))) { showImport(parseAnki(await file.text(), name)); return; }
   toast('Paket wird gelesen …');
-  try { showImport(await parseApkg(bytes, name)); }
+  try { showImport(await parseApkg(file, name)); }
   catch (err) { toast(err.message || 'Das Paket konnte nicht gelesen werden.', 6000); }
 }
 
@@ -562,7 +583,35 @@ function showImport(result) {
   scrollTo(0, 0);
 }
 
-function commitImport() {
+async function pruneMedia() {
+  const used = new Set();
+  for (const c of S.cards) for (const m of (c.front + c.back).matchAll(IMG_RE)) used.add(m[1]);
+  const unused = (await store.mediaNames()).filter((n) => !used.has(n));
+  if (unused.length) await store.deleteMedia(unused);
+  for (const n of unused) imageUrls.delete(n);
+}
+
+async function commitImport() {
+  const imp = pendingImport;
+  if (imp.loadImages && imp.imagesAvailable) {
+    imp.progress = 1;
+    render();
+    try {
+      const have = new Set(await store.mediaNames());
+      let shown = 0;
+      await imp.loadImages(store.putMedia, have, (done, total) => {
+        const p = Math.max(1, Math.round((done / total) * 100));
+        if (p !== shown) { shown = p; imp.progress = p; if (pendingImport === imp && tab === 'karten' && !session) render(); }
+      });
+      for (const n of imp.images) imageUrls.delete(n);
+    } catch (err) {
+      imp.progress = 0;
+      toast(err && err.name === 'QuotaExceededError' ? 'Der Speicher des Geräts reicht nicht für alle Bilder.' : 'Die Bilder konnten nicht gespeichert werden.', 6000);
+      render();
+      return;
+    }
+  }
+  if (pendingImport !== imp) return;
   let added = 0;
   let updated = 0;
   for (const c of pendingImport.cards) {
@@ -612,13 +661,21 @@ const actions = {
     render();
   },
   next: () => next(),
+  zoom: (el) => {
+    if (!el.src) return;
+    const box = document.createElement('div');
+    box.className = 'lightbox';
+    box.append(Object.assign(document.createElement('img'), { src: el.src, alt: 'Bild' }));
+    box.addEventListener('click', () => box.remove());
+    document.body.append(box);
+  },
   giveup: () => {
     const card = cardById(session.queue[session.idx].id);
     applyRating(session.queue[session.idx], 'bad');
     session.mode = 'oral-shown';
-    $app.innerHTML = `${sessionHeader()}<section class="card question"><p class="pre">${esc(card.front)}</p></section>
-      <section class="card answer"><small>Musterantwort</small><p class="pre">${esc(card.back)}</p></section>
-      <button class="btn primary" data-act="resume">Weiter</button>`;
+    setHtml(`${sessionHeader()}<section class="card question"><p class="pre">${rich(card.front)}</p></section>
+      <section class="card answer"><small>Musterantwort</small><p class="pre">${rich(card.back)}</p></section>
+      <button class="btn primary" data-act="resume">Weiter</button>`);
   },
   resume: () => { session.mode = 'ki'; next(); },
   send: async () => {
@@ -658,6 +715,7 @@ const actions = {
     if (!confirm(`Stapel „${name}“ mit allen Karten und Lernstand löschen?`)) return;
     S.cards = S.cards.filter((c) => c.deck !== name);
     persist(); render();
+    pruneMedia().catch(() => {});
   },
   testkey: async (el) => {
     if (!S.settings.apiKey) { toast('Trag erst einen Schlüssel ein.'); return; }

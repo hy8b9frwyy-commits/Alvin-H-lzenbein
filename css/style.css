@@ -204,3 +204,10 @@ details summary { cursor: pointer; font-weight: 600; }
 
 /* iOS zeichnet Datumsfelder sonst breiter und flacher als die übrigen Felder */
 input[type="date"] { -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; min-height: 46px; display: block; }
+
+.cardimg { display: block; max-width: 100%; max-height: 60vh; height: auto; border-radius: 10px; margin: 6px 0; background: #fff; cursor: zoom-in; }
+.cardimg:not([src]) { min-height: 80px; width: 100%; background: var(--line); }
+.opt .cardimg { max-height: 160px; }
+.noimg { color: var(--muted); font-weight: 400; }
+.lightbox { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, .92); overflow: auto; display: flex; cursor: zoom-out; }
+.lightbox img { margin: auto; max-width: none; width: auto; min-width: 100%; background: #fff; }
