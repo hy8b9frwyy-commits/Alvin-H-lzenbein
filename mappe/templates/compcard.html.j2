@@ -35,7 +35,7 @@ h1,p,dl,dd{margin:0}
 <section class="pg front">
   <div class="img"><img src="{{ img_dir }}/{{ L.compcard.front }}.jpg" alt="" style="object-position:{{ photos[L.compcard.front].pos }}"></div>
   <h1 class="name" id="name"><span>{{ p.name.first }}</span><span>{{ p.name.last }}</span></h1>
-  <div class="foot lab"><span>{{ p.board }} · {{ p.base }}</span><span>{{ p.issue }}</span></div>
+  <div class="foot lab"><span>{{ p.board }}{% if p.base %} · {{ p.base }}{% endif %}</span><span>{{ p.issue }}</span></div>
 </section>
 <section class="pg">
   {% set slots = ['left:8mm;top:8mm', 'left:76mm;top:8mm', 'left:8mm;top:86mm', 'left:76mm;top:86mm'] %}
@@ -49,7 +49,7 @@ h1,p,dl,dd{margin:0}
   </div>
   <p class="lab" style="position:absolute;left:8mm;right:8mm;bottom:5.5mm;display:flex;justify-content:space-between;gap:4mm">
     <span>{{ full_name }}{% if p.hair %} · Hair {{ p.hair }}{% endif %}{% if p.eyes %} · Eyes {{ p.eyes }}{% endif %}</span>
-    <span>{{ p.contact.email }}{% if p.contact.instagram %} · @{{ p.contact.instagram }}{% endif %}</span>
+    <span>{{ p.contact.email or '' }}{% if p.contact.instagram %} · @{{ p.contact.instagram }}{% endif %}</span>
   </p>
 </section>
 <script>

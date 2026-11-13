@@ -22,7 +22,8 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from PIL import Image, ImageCms, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 HERE = Path(__file__).resolve().parent
-SIZES = {"web": (1700, 82), "thumb": (840, 78), "print": (2500, 86), "mail": (1500, 74)}
+CUTOUT_MODEL = "birefnet-general-lite"
+SIZES = {"web": (1700, 82), "thumb": (840, 78), "print": (2500, 86), "mail": (1300, 70)}
 
 try:  # iPhone originals may arrive as HEIC
     import pillow_heif  # type: ignore
@@ -132,6 +133,22 @@ def export(img: Image.Image, path: Path, long_edge: int, quality: int) -> None:
     img.save(path, "JPEG", quality=quality, optimize=True, progressive=True, subsampling=0 if quality >= 84 else 2)
 
 
+def make_cutout(img: Image.Image, paths: list) -> None:
+    """Separate the figure from its background (rembg) and save it with transparency, same frame as the photo."""
+    from rembg import new_session, remove
+
+    w, h = img.size
+    s = 1700 / max(w, h)
+    base = img.resize((round(w * s), round(h * s)), Image.LANCZOS) if s < 1 else img
+    cut = remove(base, session=new_session(CUTOUT_MODEL), post_process_mask=True)
+    a = np.asarray(cut.split()[-1], dtype=np.float32) / 255.0
+    a = np.clip((a - 0.08) / 0.84, 0, 1)  # drop faint halo, keep soft hair edges
+    cut.putalpha(Image.fromarray((a * 255).astype(np.uint8)))
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        cut.save(path, "WEBP", quality=88, method=5)
+
+
 def process_photos(layout: dict, photos_dir: Path, out: Path, mail: bool) -> dict:
     """Create every derivative; return id -> metadata used by the templates."""
     meta = {}
@@ -158,6 +175,9 @@ def process_photos(layout: dict, photos_dir: Path, out: Path, mail: bool) -> dic
         export(img, out / "print" / "img" / f"{pid}.jpg", *SIZES["print"])
         if mail:
             export(img, out / "print" / "img-mail" / f"{pid}.jpg", *SIZES["mail"])
+        if real and layout["cover"].get("cutout") and pid == layout["cover"]["photo"]:
+            make_cutout(img, [out / "web" / "img" / f"{pid}-cut.webp", out / "print" / "img" / f"{pid}-cut.webp"]
+                        + ([out / "print" / "img-mail" / f"{pid}-cut.webp"] if mail else []))
         w, h = img.size
         meta[pid] = {
             "id": pid, "w": w, "h": h, "ratio": round(w / h, 4), "real": real,
@@ -199,12 +219,17 @@ def build_stats(profile: dict) -> list[dict]:
     if s.get("shoe_eu"):
         us = SHOE_US.get(math.floor(s["shoe_eu"]))
         rows.append({"label": "Shoes", "value": num(s["shoe_eu"]), "unit": "EU", "alt": f"{num(us)} US" if us else ""})
+    if profile.get("draft"):  # show which measurements are still missing
+        have = {r["label"] for r in rows}
+        order = ["Height", "Chest", "Waist", "Suit", "Shoes"]
+        rows += [{"label": lab, "value": "\u2014", "unit": "", "alt": "to be added", "todo": True} for lab in order if lab not in have]
+        rows.sort(key=lambda r: order.index(r["label"]) if r["label"] in order else 99)
     return rows
 
 
 def build_facts(profile: dict) -> list[dict]:
     facts = []
-    for key, label in (("hair", "Hair"), ("eyes", "Eyes"), ("base", "Based in"), ("born", "Born")):
+    for key, label in (("hair", "Hair"), ("eyes", "Eyes"), ("tattoos", "Tattoos"), ("base", "Based in"), ("born", "Born")):
         if profile.get(key):
             facts.append({"label": label, "value": str(profile[key])})
     for key, label in (("languages", "Languages"), ("skills", "Sports & skills")):
@@ -290,6 +315,8 @@ def main() -> None:
         "mast_em": max(est_width(first), est_width(last)),
         "pages": print_pages(layout),
         "preview": not all(m["real"] for m in photos.values()),
+        "draft": bool(profile.get("draft")),
+        "has_contact": any(profile.get("contact", {}).get(k) for k in ("email", "instagram", "phone")),
     }
     env = Environment(loader=FileSystemLoader(HERE / "templates"), autoescape=select_autoescape(["html", "j2"]),
                       trim_blocks=True, lstrip_blocks=True)

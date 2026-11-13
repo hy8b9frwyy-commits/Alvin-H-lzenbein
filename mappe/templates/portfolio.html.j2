@@ -32,13 +32,16 @@ h1,h2,p,dl,dd{margin:0}
 .side{font:italic 400 20pt/1.1 var(--serif)}
 
 /* cover */
-.cov{--em:{{ '%.3f'|format(mast_em) }};--fs:min(calc(190mm / var(--em)),64mm);--ix:24mm;--ih:236mm;--mx:10mm;--my:calc(var(--ih) - 1.38 * var(--fs))}
+.cov{--em:{{ '%.3f'|format(mast_em) }};--fs:min(calc(190mm / var(--em)),64mm);--ix:24mm;--ih:236mm;--mx:10mm;--my:calc(var(--ih) - 1.41 * var(--fs))}
 .mast{position:absolute;left:var(--mx);top:var(--my);width:210mm;font:400 var(--fs)/.94 var(--display);text-transform:uppercase;white-space:nowrap}
 .mast span{display:block;width:max-content}
 .cov .img{left:var(--ix);top:0;width:calc(210mm - var(--ix));height:var(--ih)}
 .cov .img::after{content:"";position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.5),rgba(0,0,0,0) 46%)}
 .cov .img .mast{left:calc(var(--mx) - var(--ix));color:#fff;z-index:1}
 .cov .img .cut{position:absolute;inset:0;z-index:2}
+.cov.sky{--my:8mm}
+.cov.sky .img::after{background:linear-gradient(to bottom,rgba(0,0,0,.2),rgba(0,0,0,0) 42%)}
+.cov.sky .spine{top:auto;bottom:70mm}
 .spine{position:absolute;left:12mm;top:10mm;transform:translateX(-50%) rotate(180deg);writing-mode:vertical-rl;display:flex;gap:1.6em;white-space:nowrap}
 .spine b{font-weight:400;color:var(--accent)}
 .cov-foot{position:absolute;left:10mm;right:10mm;bottom:8mm;display:flex;justify-content:space-between}
@@ -72,15 +75,15 @@ h1,h2,p,dl,dd{margin:0}
 </head>
 <body>
 
-<section class="pg cov">
+<section class="pg cov {{ L.cover.mode or '' }}">
   <h1 class="mast" id="mast"><span>{{ p.name.first }}</span><span>{{ p.name.last }}</span></h1>
   <div class="img">
     <img src="{{ img_dir }}/{{ L.cover.photo }}.jpg" alt="" style="object-position:{{ photos[L.cover.photo].pos }}">
     <div class="mast" aria-hidden="true"><span>{{ p.name.first }}</span><span>{{ p.name.last }}</span></div>
     {% if L.cover.cutout %}<img class="cut" src="{{ img_dir }}/{{ L.cover.photo }}-cut.webp" alt="" style="object-position:{{ photos[L.cover.photo].pos }}">{% endif %}
   </div>
-  <p class="spine lab"><b>{{ p.issue }}</b><span>{{ p.board }}</span><span>{{ p.base }}</span>{% if p.stats.height_cm %}<span>{{ p.stats.height_cm }} cm</span>{% endif %}</p>
-  <div class="cov-foot lab"><span>{{ p.status }}</span><span>{{ p.contact.email }}</span></div>
+  <p class="spine lab"><b>{{ p.issue }}</b><span>{{ p.board }}</span>{% if p.base %}<span>{{ p.base }}</span>{% endif %}{% if p.stats.height_cm %}<span>{{ p.stats.height_cm }} cm</span>{% endif %}</p>
+  <div class="cov-foot lab"><span>{{ p.status }}</span><span>{{ p.contact.email or p.issue }}</span></div>
 </section>
 
 <section class="pg">
@@ -160,11 +163,12 @@ h1,h2,p,dl,dd{margin:0}
     {% if p.contact.instagram %}<div class="c-row"><span class="lab">Instagram</span><span class="c-val">@{{ p.contact.instagram }}</span></div>{% endif %}
     {% if p.contact.phone %}<div class="c-row"><span class="lab">Phone</span><span class="c-val">{{ p.contact.phone }}</span></div>{% endif %}
     {% if p.contact.web %}<div class="c-row"><span class="lab">Portfolio</span><span class="c-val">{{ p.contact.web }}</span></div>{% endif %}
-    <div class="c-row"><span class="lab">Based in</span><span class="c-val">{{ p.base }}</span></div>
+    {% if p.base %}<div class="c-row"><span class="lab">Based in</span><span class="c-val">{{ p.base }}</span></div>{% endif %}
+    {% if not has_contact %}<div class="c-row"><span class="lab">Contact</span><span class="c-val">To be added</span></div>{% endif %}
   </div>
   <p class="lab abs" style="left:12mm;right:12mm;bottom:22mm;line-height:2">
-    {% for s in stats %}{{ s.label }} {{ s.value }} {{ s.unit }}{% if not loop.last %} &nbsp;/&nbsp; {% endif %}{% endfor %}
-    {% if p.hair %} &nbsp;/&nbsp; Hair {{ p.hair }}{% endif %}{% if p.eyes %} &nbsp;/&nbsp; Eyes {{ p.eyes }}{% endif %}
+    {% for s in stats if not s.todo %}{{ s.label }} {{ s.value }} {{ s.unit }} &nbsp;/&nbsp; {% endfor %}
+    {% if p.hair %}Hair {{ p.hair }}{% endif %}{% if p.eyes %} &nbsp;/&nbsp; Eyes {{ p.eyes }}{% endif %}
   </p>
   {{ folio(pages|length + 4, p.issue) }}
 </section>
