@@ -7,9 +7,10 @@ import { NACHRICHTEN } from '../nachrichten.js';
 // ---------- Zustand ----------
 
 const INTERVALS = [0, 1, 3, 7, 14, 30]; // Tage bis zur nächsten Wiederholung je Stufe
-const VERSION = 18; // bei jeder Änderung hochzählen, wird unter „Mehr“ angezeigt
+const VERSION = 19; // bei jeder Änderung hochzählen, wird unter „Mehr“ angezeigt
 const EXAM_QUESTIONS = 5; // Fragen pro Prüfungsgespräch (Einstieg + Anschlussfragen)
 const CASE_QUESTIONS = 7; // Fragen pro Fallbeispiel
+const CASE_GOAL = 10; // angepeilte Fälle pro Fach für den Gesamtfortschritt
 const CASE_SUBJECTS = [
   { id: 'ains', icon: '💉', name: 'Anästhesie, Intensiv-, Notfall- und Schmerzmedizin' },
   { id: 'innere', icon: '🫀', name: 'Innere Medizin' },
@@ -646,9 +647,11 @@ function viewHeute() {
 
     <section class="card">
       <div class="row"><h2>Gesamtfortschritt</h2><span class="muted">${seen} von ${total} Karten gelernt</span></div>
+      <div class="row sub first"><h2>Karten</h2></div>
       <div class="bigpct">${pct(seen, total)} %</div>
       <div class="seg tall"><i class="ok" style="width:${(sicher / total) * 100}%"></i><i class="work" style="width:${((seen - sicher) / total) * 100}%"></i></div>
       <div class="legend"><span><i class="dot ok"></i>${sicher} sitzen</span><span><i class="dot work"></i>${seen - sicher} in Arbeit</span><span><i class="dot"></i>${total - seen} neu</span></div>
+      ${caseProgress()}
     </section>
 
     <section class="stats">
@@ -677,6 +680,18 @@ function viewHeute() {
 }
 
 const GRADE_VALUE = { 'sehr gut': 1, gut: 2, befriedigend: 3, ausreichend: 4, 'nicht ausreichend': 5 };
+
+// Fälle pro Fach als Teil des Gesamtfortschritts
+function caseProgress() {
+  const rows = CASE_SUBJECTS.map((f) => {
+    const done = S.cases.filter((c) => c.fach === f.name);
+    const graded = done.filter((c) => GRADE_VALUE[c.note]);
+    const avg = graded.length ? ` · Ø ${(graded.reduce((sum, c) => sum + GRADE_VALUE[c.note], 0) / graded.length).toFixed(1).replace('.', ',')}` : '';
+    return `<div class="deckrow"><div class="row"><span>${f.icon} ${esc(f.name)}</span><span class="muted nowrap">${done.length}/${CASE_GOAL}${avg}</span></div>
+      <div class="seg"><i class="ok" style="width:${Math.min(100, (done.length / CASE_GOAL) * 100)}%"></i></div></div>`;
+  }).join('');
+  return `<div class="row sub"><h2>Fälle</h2><span class="muted">${S.cases.length} gelöst</span></div>${rows}`;
+}
 
 // Fortschritt in Prüfungsgesprächen und Fällen für die Heute-Seite
 function examProgress() {
