@@ -1,0 +1,16 @@
+{
+  "name": {"first": "Alvin", "last": "Hölzenbein"},
+  "board": "Men",
+  "base": "Hamburg",
+  "born": 2001,
+  "issue": "Portfolio 2026",
+  "status": "Unsigned, seeking representation",
+  "statement": "New face, based in Hamburg.",
+  "bio": "Available for fashion, commercial, sport and lifestyle work in Germany and abroad.",
+  "stats": {"height_cm": 188, "chest_cm": 98, "waist_cm": 81, "suit_eu": 48, "shoe_eu": 44},
+  "hair": "Brown",
+  "eyes": "Blue",
+  "languages": ["German", "English"],
+  "skills": ["Football", "Swimming", "Running"],
+  "contact": {"email": "name@example.com", "instagram": "example.handle"}
+}

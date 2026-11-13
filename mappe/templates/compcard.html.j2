@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ full_name }} Comp Card</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=League+Gothic&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;1,6..96,400&family=DM+Mono:wght@400;500&display=swap">
+<style>
+/* Comp card: A5, front and back. */
+@page{size:148mm 210mm;margin:0}
+:root{--ink:#111110;--mute:#66665F;--rule:#D3D3CC;--accent:#1F3BFF;
+  --display:'League Gothic','Arial Narrow',Impact,sans-serif;--serif:'Bodoni Moda','Didot',Georgia,serif;--mono:'DM Mono',Menlo,monospace}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;background:#fff;color:var(--ink);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+h1,p,dl,dd{margin:0}
+.pg{position:relative;width:148mm;height:210mm;overflow:hidden;break-after:page;page-break-after:always}
+.pg:last-child{break-after:auto;page-break-after:auto}
+.lab{font:400 6pt/1.4 var(--mono);letter-spacing:.14em;text-transform:uppercase}
+.img{position:absolute;overflow:hidden;background:var(--rule)}
+.img img{width:100%;height:100%;object-fit:cover;display:block}
+.front .img{inset:0}
+.front .img::after{content:"";position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.58),rgba(0,0,0,0) 44%)}
+.name{position:absolute;left:8mm;bottom:13mm;color:#fff;--em:{{ '%.3f'|format(mast_em) }};font:400 min(calc(132mm / var(--em)),46mm)/.94 var(--display);text-transform:uppercase;white-space:nowrap}
+.name span{display:block;width:max-content}
+.front .foot{position:absolute;left:8mm;right:8mm;bottom:6mm;display:flex;justify-content:space-between;color:#fff}
+.grid{display:grid;grid-template-columns:repeat({{ [stats|length, 4]|max if stats|length <= 6 else 4 }},1fr);border-top:.3mm solid var(--ink)}
+.stat{padding:2mm 2mm 2.6mm;border-left:.2mm solid var(--rule);border-bottom:.2mm solid var(--rule)}
+.stat:first-child{padding-left:0;border-left:0}
+.stat dt{color:var(--mute)}
+.stat .v{font:400 22pt/1 var(--display)}
+.stat .u{font:italic 400 8pt/1 var(--serif);margin-left:.8mm}
+.stat .alt{display:block;color:var(--mute)}
+</style>
+</head>
+<body>
+<section class="pg front">
+  <div class="img"><img src="{{ img_dir }}/{{ L.compcard.front }}.jpg" alt="" style="object-position:{{ photos[L.compcard.front].pos }}"></div>
+  <h1 class="name" id="name"><span>{{ p.name.first }}</span><span>{{ p.name.last }}</span></h1>
+  <div class="foot lab"><span>{{ p.board }} · {{ p.base }}</span><span>{{ p.issue }}</span></div>
+</section>
+<section class="pg">
+  {% set slots = ['left:8mm;top:8mm', 'left:76mm;top:8mm', 'left:8mm;top:86mm', 'left:76mm;top:86mm'] %}
+  {% for pid in L.compcard.back[:4] %}
+  <div class="img" style="{{ slots[loop.index0] }};width:64mm;height:74mm"><img src="{{ img_dir }}/{{ pid }}.jpg" alt="" style="object-position:{{ photos[pid].pos }}"></div>
+  {% endfor %}
+  <div style="position:absolute;left:8mm;right:8mm;top:166mm">
+    <dl class="grid">
+      {% for s in stats[:6] %}<div class="stat"><dt class="lab">{{ s.label }}</dt><dd><span class="v">{{ s.value }}</span><span class="u">{{ s.unit }}</span><span class="alt lab">{{ s.alt }}</span></dd></div>{% endfor %}
+    </dl>
+  </div>
+  <p class="lab" style="position:absolute;left:8mm;right:8mm;bottom:5.5mm;display:flex;justify-content:space-between;gap:4mm">
+    <span>{{ full_name }}{% if p.hair %} · Hair {{ p.hair }}{% endif %}{% if p.eyes %} · Eyes {{ p.eyes }}{% endif %}</span>
+    <span>{{ p.contact.email }}{% if p.contact.instagram %} · @{{ p.contact.instagram }}{% endif %}</span>
+  </p>
+</section>
+<script>
+(function () {
+  var n = document.getElementById('name');
+  document.fonts.ready.then(function () {
+    var fs = parseFloat(getComputedStyle(n).fontSize), em = 0;
+    n.querySelectorAll('span').forEach(function (s) { em = Math.max(em, s.getBoundingClientRect().width / fs); });
+    if (em > 0) n.style.setProperty('--em', em.toFixed(4));
+    document.documentElement.dataset.ready = '1';
+  });
+})();
+</script>
+</body>
+</html>

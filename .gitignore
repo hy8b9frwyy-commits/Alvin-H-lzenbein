@@ -1,0 +1,7 @@
+# Personal photos and details stay out of this public repository.
+photos/
+private/
+dist/
+node_modules/
+__pycache__/
+*.pyc

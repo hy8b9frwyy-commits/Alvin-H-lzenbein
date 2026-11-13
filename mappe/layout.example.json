@@ -1,0 +1,33 @@
+{
+  "cover": {"photo": "cover", "cutout": false},
+  "intro": {"photo": "intro"},
+  "stories": [
+    {"id": "portraits", "kicker": "No. 01", "title": "Portraits", "deck": "Face, profile and expression in plain daylight.",
+     "rows": [{"type": "trio", "photos": ["por1", "por2", "por3"]}, {"type": "duo", "photos": ["por4", "por5"]}]},
+    {"id": "fashion", "kicker": "No. 02", "title": "Fashion", "deck": "Tailoring, streetwear and silhouette.",
+     "rows": [{"type": "lead", "photos": ["fas1"]}, {"type": "duo", "photos": ["fas2", "fas3"]}]},
+    {"id": "sport", "kicker": "No. 03", "title": "Sport", "deck": "Athletic build, movement and training.",
+     "rows": [{"type": "wide", "photos": ["spo1"]}, {"type": "strip", "photos": ["spo2", "spo3", "spo4"]}]},
+    {"id": "life", "kicker": "No. 04", "title": "Life", "deck": "Unposed moments, outdoors and on the move.",
+     "rows": [{"type": "duo", "photos": ["lif1", "lif2"]}, {"type": "lead", "photos": ["lif3"]}]}
+  ],
+  "digitals": {
+    "date": "November 2026",
+    "frames": [
+      {"photo": "dig1", "label": "Front"}, {"photo": "dig2", "label": "Smile"},
+      {"photo": "dig3", "label": "Profile left"}, {"photo": "dig4", "label": "Profile right"},
+      {"photo": "dig5", "label": "Three-quarter"}, {"photo": "dig6", "label": "Full length"},
+      {"photo": "dig7", "label": "Side"}, {"photo": "dig8", "label": "Back"}
+    ]
+  },
+  "compcard": {"front": "cover", "back": ["por2", "fas1", "spo2", "dig6"]},
+  "photos": {
+    "cover": {"look": "bw"}, "intro": {"look": "color"},
+    "por1": {"look": "bw"}, "por2": {"look": "color"}, "por3": {"look": "bw"}, "por4": {"look": "color"}, "por5": {"look": "bw"},
+    "fas1": {"look": "color"}, "fas2": {"look": "bw"}, "fas3": {"look": "color"},
+    "spo1": {"look": "bw", "ph": "wide"}, "spo2": {"look": "color"}, "spo3": {"look": "color"}, "spo4": {"look": "bw"},
+    "lif1": {"look": "color"}, "lif2": {"look": "color"}, "lif3": {"look": "color", "ph": "wide"},
+    "dig1": {"look": "natural"}, "dig2": {"look": "natural"}, "dig3": {"look": "natural"}, "dig4": {"look": "natural"},
+    "dig5": {"look": "natural"}, "dig6": {"look": "natural"}, "dig7": {"look": "natural"}, "dig8": {"look": "natural"}
+  }
+}

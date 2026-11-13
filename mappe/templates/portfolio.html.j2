@@ -1,0 +1,185 @@
+{% macro im(pid, style, cap=true) %}
+{% set m = photos[pid] %}
+<div class="img" style="{{ style }}"><img src="{{ img_dir }}/{{ pid }}.jpg" alt="" style="object-position:{{ m.pos }}"></div>
+{% endmacro %}
+{% macro folio(n, label='') %}
+<div class="folio lab"><span>{{ full_name }}</span><span>{{ label }}</span><span>{{ n|pad }}</span></div>
+{% endmacro %}
+{% macro nums(ids) %}{% for pid in ids %}{{ photos[pid].n|pad }}{% if not loop.last %} · {% endif %}{% endfor %}{% endmacro %}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ full_name }} Portfolio</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=League+Gothic&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;1,6..96,400&family=DM+Mono:wght@400;500&display=swap">
+<style>
+@page{size:210mm 297mm;margin:0}
+:root{--paper:#FFFFFF;--ink:#111110;--mute:#66665F;--rule:#D3D3CC;--accent:#1F3BFF;
+  --display:'League Gothic','Arial Narrow',Impact,sans-serif;--serif:'Bodoni Moda','Didot',Georgia,serif;--mono:'DM Mono',Menlo,monospace}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;background:var(--paper);color:var(--ink);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+h1,h2,p,dl,dd{margin:0}
+.pg{position:relative;width:210mm;height:297mm;overflow:hidden;break-after:page;page-break-after:always;background:var(--paper)}
+.pg:last-child{break-after:auto;page-break-after:auto}
+.lab{font:400 6.6pt/1.4 var(--mono);letter-spacing:.14em;text-transform:uppercase}
+.kick{color:var(--accent)}
+.img{position:absolute;overflow:hidden;background:var(--rule)}
+.img img{width:100%;height:100%;object-fit:cover;display:block}
+.folio{position:absolute;left:12mm;right:12mm;bottom:7mm;display:flex;justify-content:space-between;color:var(--mute)}
+.abs{position:absolute}
+.title{font:italic 400 92pt/.86 var(--serif);letter-spacing:-.02em}
+.deck{font:400 11pt/1.4 var(--serif);color:var(--mute)}
+.side{font:italic 400 20pt/1.1 var(--serif)}
+
+/* cover */
+.cov{--em:{{ '%.3f'|format(mast_em) }};--fs:min(calc(190mm / var(--em)),64mm);--ix:24mm;--ih:236mm;--mx:10mm;--my:calc(var(--ih) - 1.38 * var(--fs))}
+.mast{position:absolute;left:var(--mx);top:var(--my);width:210mm;font:400 var(--fs)/.94 var(--display);text-transform:uppercase;white-space:nowrap}
+.mast span{display:block;width:max-content}
+.cov .img{left:var(--ix);top:0;width:calc(210mm - var(--ix));height:var(--ih)}
+.cov .img::after{content:"";position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.5),rgba(0,0,0,0) 46%)}
+.cov .img .mast{left:calc(var(--mx) - var(--ix));color:#fff;z-index:1}
+.cov .img .cut{position:absolute;inset:0;z-index:2}
+.spine{position:absolute;left:12mm;top:10mm;transform:translateX(-50%) rotate(180deg);writing-mode:vertical-rl;display:flex;gap:1.6em;white-space:nowrap}
+.spine b{font-weight:400;color:var(--accent)}
+.cov-foot{position:absolute;left:10mm;right:10mm;bottom:8mm;display:flex;justify-content:space-between}
+
+/* profile */
+.say{font:italic 400 38pt/1 var(--serif);letter-spacing:-.01em}
+.bio{font:400 11.5pt/1.45 var(--serif)}
+.grid-s{display:grid;grid-template-columns:repeat({{ [stats|length, 4]|max if stats|length <= 6 else 4 }},1fr);border-top:.35mm solid var(--ink)}
+.stat{padding:3mm 3mm 4mm;border-left:.2mm solid var(--rule);border-bottom:.2mm solid var(--rule)}
+.stat:first-child{padding-left:0;border-left:0}
+.stat dt{color:var(--mute)}
+.stat .v{font:400 50pt/.95 var(--display)}
+.stat .u{font:italic 400 11pt/1 var(--serif);margin-left:1.2mm}
+.stat .alt{display:block;color:var(--mute)}
+.fact{display:grid;grid-template-columns:34mm 1fr;gap:3mm;padding:2.2mm 0;border-bottom:.2mm solid var(--rule)}
+.fact dt{color:var(--mute);padding-top:.8mm}
+.fact dd{font:400 11pt/1.3 var(--serif)}
+
+/* digitals */
+.band-t{font:400 96pt/.8 var(--display);text-transform:uppercase}
+.sheet{position:absolute;left:12mm;right:12mm;top:50mm;display:grid;grid-template-columns:repeat({{ 4 if L.digitals and L.digitals.frames|length > 9 else 3 }},1fr);gap:5mm 4mm}
+.cell .img{position:relative;aspect-ratio:4/5}
+.cell .lab{display:flex;gap:1em;padding-top:1.4mm;color:var(--mute)}
+.cell .lab b{font-weight:400;color:var(--ink)}
+
+/* back */
+.c-row{display:grid;grid-template-columns:34mm 1fr;gap:3mm;align-items:baseline;padding:3.4mm 0;border-bottom:.2mm solid var(--rule)}
+.c-row .lab{color:var(--mute)}
+.c-val{font:400 17pt/1.2 var(--serif)}
+</style>
+</head>
+<body>
+
+<section class="pg cov">
+  <h1 class="mast" id="mast"><span>{{ p.name.first }}</span><span>{{ p.name.last }}</span></h1>
+  <div class="img">
+    <img src="{{ img_dir }}/{{ L.cover.photo }}.jpg" alt="" style="object-position:{{ photos[L.cover.photo].pos }}">
+    <div class="mast" aria-hidden="true"><span>{{ p.name.first }}</span><span>{{ p.name.last }}</span></div>
+    {% if L.cover.cutout %}<img class="cut" src="{{ img_dir }}/{{ L.cover.photo }}-cut.webp" alt="" style="object-position:{{ photos[L.cover.photo].pos }}">{% endif %}
+  </div>
+  <p class="spine lab"><b>{{ p.issue }}</b><span>{{ p.board }}</span><span>{{ p.base }}</span>{% if p.stats.height_cm %}<span>{{ p.stats.height_cm }} cm</span>{% endif %}</p>
+  <div class="cov-foot lab"><span>{{ p.status }}</span><span>{{ p.contact.email }}</span></div>
+</section>
+
+<section class="pg">
+  {% if L.intro and L.intro.photo %}{{ im(L.intro.photo, 'left:12mm;top:12mm;width:84mm;height:112mm') }}{% endif %}
+  <div class="abs" style="left:106mm;right:12mm;top:12mm">
+    <p class="lab kick">Profile</p>
+    <p class="say" style="margin-top:5mm">{{ p.statement }}</p>
+    <p class="bio" style="margin-top:7mm">{{ p.bio }}</p>
+  </div>
+  <div class="abs" style="left:12mm;right:12mm;top:138mm">
+    <p class="lab kick" style="margin-bottom:3mm">Measurements</p>
+    <dl class="grid-s">
+      {% for s in stats %}<div class="stat"><dt class="lab">{{ s.label }}</dt><dd><span class="v">{{ s.value }}</span><span class="u">{{ s.unit }}</span><span class="alt lab">{{ s.alt }}</span></dd></div>{% endfor %}
+    </dl>
+    <dl style="margin-top:7mm">
+      {% for f in facts %}<div class="fact"><dt class="lab">{{ f.label }}</dt><dd>{{ f.value }}</dd></div>{% endfor %}
+    </dl>
+  </div>
+  {{ folio(2, 'Profile') }}
+</section>
+
+{% for pg in pages %}
+{% set no = loop.index + 2 %}
+{% set ids = pg.photos %}
+<section class="pg">
+  {% if pg.kind == 'opener' %}
+    <div class="abs" style="left:12mm;right:12mm;top:12mm">
+      <p class="lab kick">{{ pg.story.kicker }}</p>
+      <h2 class="title" style="margin-top:4mm">{{ pg.story.title }}</h2>
+    </div>
+    <p class="deck abs" style="left:12mm;width:46mm;top:98mm">{{ pg.story.deck }}</p>
+    {{ im(ids[0], 'left:64mm;top:74mm;width:146mm;height:223mm') }}
+    <p class="lab abs" style="left:12mm;bottom:7mm;color:var(--mute)">{{ nums(ids) }}</p>
+  {% elif pg.kind == 'full' %}
+    {{ im(ids[0], 'left:12mm;top:12mm;width:186mm;height:262mm') }}
+    {{ folio(no, pg.story.title ~ ' · ' ~ nums(ids)) }}
+  {% elif pg.kind == 'duo' %}
+    {{ im(ids[0], 'left:12mm;top:12mm;width:104mm;height:139mm') }}
+    {{ im(ids[1], 'left:94mm;top:147mm;width:104mm;height:132mm') }}
+    <p class="side abs" style="left:126mm;right:12mm;top:14mm">{{ pg.story.title }}</p>
+    <p class="deck abs" style="left:12mm;width:70mm;top:160mm">{{ pg.story.deck }}</p>
+    {{ folio(no, pg.story.title ~ ' · ' ~ nums(ids)) }}
+  {% elif pg.kind == 'trio' %}
+    {{ im(ids[0], 'left:12mm;top:12mm;width:124mm;height:165mm') }}
+    {{ im(ids[1], 'left:140mm;top:12mm;width:58mm;height:80.5mm') }}
+    {{ im(ids[2], 'left:140mm;top:96.5mm;width:58mm;height:80.5mm') }}
+    <p class="side abs" style="left:12mm;width:120mm;top:186mm;font-size:30pt">{{ pg.story.deck }}</p>
+    {{ folio(no, pg.story.title ~ ' · ' ~ nums(ids)) }}
+  {% else %}
+    {% set slots = ['left:12mm;top:12mm', 'left:107mm;top:12mm', 'left:12mm;top:144mm', 'left:107mm;top:144mm'] %}
+    {% for pid in ids %}{{ im(pid, slots[loop.index0] ~ ';width:91mm;height:128mm') }}{% endfor %}
+    {{ folio(no, pg.story.title ~ ' · ' ~ nums(ids)) }}
+  {% endif %}
+</section>
+{% endfor %}
+
+{% if L.digitals and L.digitals.frames %}
+<section class="pg">
+  <h2 class="band-t abs" style="left:12mm;top:12mm">Digitals</h2>
+  <p class="lab abs" style="right:12mm;top:14mm;width:52mm;text-align:right;color:var(--mute)">Unretouched. Natural light, no styling. Taken {{ L.digitals.date }}.</p>
+  <div class="sheet">
+    {% for fr in L.digitals.frames %}
+    <div class="cell"><div class="img"><img src="{{ img_dir }}/{{ fr.photo }}.jpg" alt="" style="object-position:{{ photos[fr.photo].pos }}"></div><p class="lab"><b>{{ photos[fr.photo].n|pad }}</b>{{ fr.label }}</p></div>
+    {% endfor %}
+  </div>
+  {{ folio(pages|length + 3, 'Digitals') }}
+</section>
+{% endif %}
+
+<section class="pg">
+  <div class="abs" style="left:12mm;right:12mm;top:12mm">
+    <p class="lab kick">{{ p.status }}</p>
+    <h2 class="title" style="margin-top:4mm">Bookings</h2>
+  </div>
+  <div class="abs" style="left:12mm;right:12mm;top:96mm;border-top:.35mm solid var(--ink)">
+    {% if p.contact.email %}<div class="c-row"><span class="lab">E-mail</span><span class="c-val">{{ p.contact.email }}</span></div>{% endif %}
+    {% if p.contact.instagram %}<div class="c-row"><span class="lab">Instagram</span><span class="c-val">@{{ p.contact.instagram }}</span></div>{% endif %}
+    {% if p.contact.phone %}<div class="c-row"><span class="lab">Phone</span><span class="c-val">{{ p.contact.phone }}</span></div>{% endif %}
+    {% if p.contact.web %}<div class="c-row"><span class="lab">Portfolio</span><span class="c-val">{{ p.contact.web }}</span></div>{% endif %}
+    <div class="c-row"><span class="lab">Based in</span><span class="c-val">{{ p.base }}</span></div>
+  </div>
+  <p class="lab abs" style="left:12mm;right:12mm;bottom:22mm;line-height:2">
+    {% for s in stats %}{{ s.label }} {{ s.value }} {{ s.unit }}{% if not loop.last %} &nbsp;/&nbsp; {% endif %}{% endfor %}
+    {% if p.hair %} &nbsp;/&nbsp; Hair {{ p.hair }}{% endif %}{% if p.eyes %} &nbsp;/&nbsp; Eyes {{ p.eyes }}{% endif %}
+  </p>
+  {{ folio(pages|length + 4, p.issue) }}
+</section>
+
+<script>
+(function () {
+  var cov = document.querySelector('.cov'), mast = document.getElementById('mast');
+  function fit() {
+    var fs = parseFloat(getComputedStyle(mast).fontSize), em = 0;
+    mast.querySelectorAll('span').forEach(function (s) { em = Math.max(em, s.getBoundingClientRect().width / fs); });
+    if (em > 0) cov.style.setProperty('--em', em.toFixed(4));
+    document.documentElement.dataset.ready = '1';
+  }
+  document.fonts.ready.then(fit);
+})();
+</script>
+</body>
+</html>
